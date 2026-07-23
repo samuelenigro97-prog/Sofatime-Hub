@@ -1,0 +1,9 @@
+node_modules/
+simkl_token.json
+
+cache_data.json
+.env
+nohup.out
+*.log
+.simkl_token_raw
+simkl_token.json
