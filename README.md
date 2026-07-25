@@ -1,47 +1,53 @@
-# Simkl Hub
+# Sofatime Hub
 
-Addon Stremio/Nuvio che porta la tua **watchlist Simkl** ("Da vedere") nei cataloghi,
-con bottoni per aggiungere/rimuovere e segnare come visto. Alternativa a Trakt Hub,
-pensata per superare i limiti del piano free di Trakt (watchlist 250, 1 sola app).
+Addon Stremio/Nuvio che porta le tue watchlist di **Sofa Time (TVSofa)** nei cataloghi Stremio, con bottoni per aggiungere, rimuovere e segnare come visto.
+
+Supporta una **Modalità Ibrida**:
+1. **Modalità Backup File (Offline / Natività 100%):** Carica direttamente un file di backup `.json` / `.sofa3bk` esportato da Sofa Time (locale o da un link URL/Gist remoto).
+2. **Modalità Live Sync (Simkl / Trakt Bridge):** Sincronizzazione automatica e in tempo reale sfruttando il collegamento di Sofa Time verso Simkl o Trakt.
+
+---
 
 ## Stato
 
-Milestone 1 (questo commit):
-- ✅ Auth Simkl (PIN flow) + token cifrato a riposo
-- ✅ Cataloghi watchlist (film + serie) con arricchimento TMDB (poster, titolo IT, voto IMDb)
-- ✅ Bottoni add / remove / segna-visto (endpoint protetti da bot: conferma + POST via JS + rate limit)
-- ✅ Endpoint diagnostico `/simkl-status`
+- ✅ Parser universale per file di backup Sofa Time (`sofatimeParser.js`)
+- ✅ Cataloghi watchlist (film + serie) con arricchimento TMDB / Cinemeta (poster, titolo italiano, voto IMDb, anno)
+- ✅ Bottoni add / remove / segna-visto
+- ✅ Endpoint diagnostico `/sofatime-status`
 
-In arrivo (milestone successive, da testare dal vivo):
-- Sync bidirezionale con la libreria Stremio (visti Stremio → Simkl e viceversa)
-- Cataloghi "In arrivo" e "Scegli per me"
+---
 
-## Cosa serve per farlo girare
+## Come Usarlo
 
-### 1. Registra un'app su Simkl
-1. Vai su <https://simkl.com/settings/developer/> → **Create new app** (serve un account Simkl).
-2. Prendi nota di **Client ID** e **Client Secret**.
-3. Come redirect URI va bene `urn:ietf:wg:oauth:2.0:oob` (l'addon usa il PIN flow, non serve un callback web).
+### 1. Modalità Backup File (Sofa Time Export)
+Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gestione Dati -> Backup manuale / Esporta`).
 
-### 2. Ottieni un access token (una volta)
-In locale, con le env impostate, avvia `npm start`: l'addon stampa un **codice PIN** e l'URL
-`https://simkl.com/pin`. Inserisci il codice sul sito col tuo account, e il token viene salvato
-(cifrato se `TOKEN_ENC_KEY` è impostata). Copia poi il token in `SIMKL_ACCESS_TOKEN` su Render.
+- **File Locale:** Salva il file esportato come `sofatime_backup.json` nella cartella dell'addon (oppure imposta `SOFATIME_BACKUP_PATH=/percorso/al/file.json`).
+- **URL Remoto:** Carica il file di backup su un Gist di GitHub o un server web e imposta la variabile d'ambiente `SOFATIME_BACKUP_URL=https://tuo-url.com/sofatime_backup.json`.
 
-### 3. Variabili d'ambiente
+### 2. Modalità Live Sync (Sofa Time + Simkl Sync)
+1. Nella tua app Sofa Time sul telefono, attiva la sincronizzazione con Simkl (`Impostazioni -> Account / Sync -> Simkl`).
+2. Registra un'app dev su Simkl per ottenere `SIMKL_CLIENT_ID` e `SIMKL_CLIENT_SECRET`.
+3. Imposta le env var su Render o in locale.
+
+---
+
+## Variabili d'Ambiente
+
 | Variabile | Obbligatoria | Descrizione |
 |---|---|---|
-| `SIMKL_CLIENT_ID` | ✅ | Client ID dell'app Simkl |
-| `SIMKL_CLIENT_SECRET` | consigliata | Client Secret (per rinnovo token) |
-| `SIMKL_ACCESS_TOKEN` | ✅ su Render | Token utente ottenuto col PIN flow |
-| `TMDB_KEY` | ✅ | Chiave TMDB per poster/titoli italiani |
-| `ADDON_URL` | ✅ su Render | URL pubblico del servizio (es. `https://simkl-hub.onrender.com`) |
-| `STREMIO_AUTHKEY` | opzionale | Per il futuro sync con la libreria Stremio |
-| `TOKEN_ENC_KEY` | opzionale | Cifra il token a riposo (consigliata) |
+| `SOFATIME_BACKUP_PATH` | opzionale | Percorso locale del file di backup Sofa Time (default: `./sofatime_backup.json`) |
+| `SOFATIME_BACKUP_URL` | opzionale | Link URL/Gist al file di backup Sofa Time |
+| `SIMKL_CLIENT_ID` | opzionale | Client ID Simkl (per la Modalità Live Sync) |
+| `SIMKL_CLIENT_SECRET` | opzionale | Client Secret Simkl |
+| `SIMKL_ACCESS_TOKEN` | opzionale su Render | Token utente Simkl ottenuto col PIN flow |
+| `TMDB_KEY` | consigliata | Chiave TMDB per poster e titoli in italiano (fallback su Cinemeta) |
+| `ADDON_URL` | consigliata | URL pubblico dell'addon (es. `https://sofatime-hub.onrender.com`) |
+| `TOKEN_ENC_KEY` | opzionale | Cifra il token a riposo su disco |
 
-### 4. Deploy
-Come Trakt Hub: servizio Node su Render, `npm start`, le env sopra impostate.
+---
 
 ## Comandi
-- `npm start` — avvia l'addon
-- `npm test` — controllo sintassi + test di sicurezza (cifratura token, scritture atomiche)
+
+- `npm start` — Avvia l'addon
+- `npm test` — Esegue i test di sicurezza e il test del parser di Sofa Time

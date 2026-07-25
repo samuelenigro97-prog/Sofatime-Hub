@@ -1,15 +1,17 @@
 {
-  "name": "simkl-hub",
-  "description": "Simkl Hub - addon Stremio/Nuvio per watchlist e visti collegati a Simkl",
+  "name": "sofatime-hub",
+  "description": "Sofatime Hub - Addon Stremio/Nuvio per la tua watchlist e visti di Sofa Time (Backup File & Live Sync)",
   "version": "0.1.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
     "check": "node --check index.js",
-    "test": "node --check index.js && node test/security.test.js"
+    "test": "node --check index.js && node test/security.test.js && node test/parser.test.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "stremio-addon-sdk": "^1.6.10"

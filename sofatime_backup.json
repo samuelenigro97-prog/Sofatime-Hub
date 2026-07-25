@@ -1,0 +1,64 @@
+{
+  "watchlist": [
+    {
+      "movie": {
+        "title": "Inception",
+        "year": 2010,
+        "ids": {
+          "imdb": "tt1375666",
+          "tmdb": 27205
+        }
+      }
+    },
+    {
+      "movie": {
+        "title": "Interstellar",
+        "year": 2014,
+        "ids": {
+          "imdb": "tt0816692",
+          "tmdb": 157336
+        }
+      }
+    },
+    {
+      "movie": {
+        "title": "The Dark Knight",
+        "year": 2008,
+        "ids": {
+          "imdb": "tt0468569",
+          "tmdb": 155
+        }
+      }
+    },
+    {
+      "show": {
+        "name": "Breaking Bad",
+        "year": 2008,
+        "ids": {
+          "imdb": "tt0903747",
+          "tmdb": 1396
+        }
+      }
+    },
+    {
+      "show": {
+        "name": "Stranger Things",
+        "year": 2016,
+        "ids": {
+          "imdb": "tt4574334",
+          "tmdb": 66732
+        }
+      }
+    },
+    {
+      "show": {
+        "name": "The Last of Us",
+        "year": 2023,
+        "ids": {
+          "imdb": "tt3581920",
+          "tmdb": 100088
+        }
+      }
+    }
+  ]
+}
