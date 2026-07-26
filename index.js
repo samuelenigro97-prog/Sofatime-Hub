@@ -331,7 +331,7 @@ async function main() {
     }
   });
 
-  builder.defineStreamHandler(({ type, id }) => {
+  builder.defineStreamHandler(async ({ type, id }) => {
     const simklType = type === 'movie' ? 'movies' : 'shows';
     const cid = 'sofatime-' + (type === 'movie' ? 'movies' : 'series');
     const inList = !!(((cache[cid] && cache[cid].metas) || []).find(m => m.id === id));
