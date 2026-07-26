@@ -687,6 +687,22 @@ b.addEventListener('click', () => {
   });
 
   // API che riceve il file dall'interfaccia web e lo carica sul Gist
+  
+  app.post('/api/debug', express.raw({ limit: '10mb', type: '*/*' }), (req, res) => {
+    let zipStart = -1;
+    if (Buffer.isBuffer(req.body)) {
+      zipStart = req.body.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    }
+    res.json({
+      headers: req.headers,
+      isBuffer: Buffer.isBuffer(req.body),
+      bodyLength: req.body ? req.body.length : 0,
+      firstBytes: Buffer.isBuffer(req.body) && req.body.length > 0 ? req.body.slice(0, 20).toString('hex') : null,
+      zipStart: zipStart,
+      stringPart: Buffer.isBuffer(req.body) ? req.body.slice(0, 100).toString('utf8') : null
+    });
+  });
+
   app.post('/api/upload-backup', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
     try {
       let text = '';
