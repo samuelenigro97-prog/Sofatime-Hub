@@ -665,7 +665,7 @@ button:disabled{background:#555;cursor:not-allowed}
 input[type=file]{display:none}.file-label{display:block;padding:20px;background:#16213e;border:2px dashed #444;border-radius:8px;cursor:pointer;margin-bottom:1rem;color:#888;word-break:break-all}
 .file-label:hover{border-color:#e7b700;color:#eee}</style></head>
 <body><div class="box"><h1>🛋️ Aggiorna Sofa Time</h1><p>Seleziona il backup esportato da Sofa Time per aggiornare i tuoi cataloghi su Stremio.</p>
-<label class="file-label" id="lbl">Seleziona file .json...</label><input type="file" id="file" accept=".json,.sofa3bk" />
+<label class="file-label" id="lbl" for="file">Seleziona file .zip o .json...</label><input type="file" id="file" accept=".json,.sofa3bk,.zip" />
 <button id="btn" disabled>Carica ora</button><p id="msg" style="margin-top:1.5rem;font-weight:600;"></p></div>
 <script>
 const f = document.getElementById('file'), l = document.getElementById('lbl'), b = document.getElementById('btn'), m = document.getElementById('msg');
@@ -675,23 +675,43 @@ b.addEventListener('click', () => {
   r.onload = async (e) => {
     b.disabled = true; b.textContent = 'Caricamento in corso...'; m.textContent = '';
     try {
-      const res = await fetch('/api/upload-backup', { method: 'POST', body: e.target.result, headers: {'Content-Type':'application/json'} });
+      const res = await fetch('/api/upload-backup', { method: 'POST', body: e.target.result, headers: {'Content-Type':'application/octet-stream'} });
       const data = await res.json();
       if(data.ok) { m.style.color = '#4ade80'; m.textContent = '✅ Fatto! ' + data.film + ' film e ' + data.serie + ' serie aggiornati.'; b.textContent = 'Completato'; }
       else { m.style.color = '#f87171'; m.textContent = '❌ Errore: ' + (data.error||'Sconosciuto'); b.disabled = false; b.textContent = 'Riprova'; }
     } catch(err) { m.style.color = '#f87171'; m.textContent = '❌ Errore di rete'; b.disabled = false; b.textContent = 'Riprova'; }
   };
-  r.readAsText(f.files[0]);
+  r.readAsArrayBuffer(f.files[0]);
 });
 </script></body></html>`);
   });
 
   // API che riceve il file dall'interfaccia web e lo carica sul Gist
-  app.post('/api/upload-backup', express.text({ type: '*/*', limit: '50mb' }), async (req, res) => {
+  app.post('/api/upload-backup', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
     try {
-      const text = req.body;
+      let text = '';
+      let parsed = { movies: [], shows: [] };
       const { parseSofaTimeData } = require('./sofatimeParser');
-      const parsed = parseSofaTimeData(text);
+
+      // Se è un buffer zip (inizia con magic number PK)
+      if (Buffer.isBuffer(req.body) && req.body.length > 4 && req.body[0] === 0x50 && req.body[1] === 0x4b) {
+        const AdmZip = require('adm-zip');
+        const zip = new AdmZip(req.body);
+        const zipEntries = zip.getEntries();
+        zipEntries.forEach(entry => {
+          if (entry.name.endsWith('.json')) {
+            const entryText = entry.getData().toString('utf8');
+            const entryParsed = parseSofaTimeData(entryText);
+            parsed.movies.push(...entryParsed.movies);
+            parsed.shows.push(...entryParsed.shows);
+          }
+        });
+        text = JSON.stringify(parsed);
+      } else {
+        text = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body;
+        parsed = parseSofaTimeData(text);
+      }
+      
       if (!parsed || (!parsed.movies.length && !parsed.shows.length)) return res.status(400).json({ error: 'Formato file non valido o vuoto' });
       
       // Aggiorna la cache in memoria e invalida i cataloghi
