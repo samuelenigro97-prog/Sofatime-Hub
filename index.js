@@ -701,7 +701,7 @@ b.addEventListener('click', () => {
         const zip = new AdmZip(req.body);
         const zipEntries = zip.getEntries();
         zipEntries.forEach(entry => {
-          if (entry.name.endsWith('.json')) {
+          if (entry.name.toLowerCase().includes('watchlist') && entry.name.endsWith('.json')) {
             const entryText = entry.getData().toString('utf8');
             const entryParsed = parseSofaTimeData(entryText);
             parsed.movies.push(...entryParsed.movies);
