@@ -198,21 +198,18 @@ async function imdbRatingFromCinemeta(imdb, stremioType) {
 }
 async function enrich(ids, stremioType) {
   const tmdbType = stremioType === 'movie' ? 'movie' : 'tv';
-  let tmdbId = ids.tmdb;
-  try {
-    if (!tmdbId && ids.imdb && TMDB_KEY) {
-      const r = await fetch('https://api.themoviedb.org/3/find/' + ids.imdb + '?external_source=imdb_id&api_key=' + TMDB_KEY);
-      if (r.ok) { const d = await r.json(); const arr = tmdbType === 'movie' ? d.movie_results : d.tv_results; if (arr && arr[0]) tmdbId = arr[0].id; }
-    }
-    if (!tmdbId && !TMDB_KEY && ids.imdb) {
-      // Cinemeta fallback se TMDB_KEY manca
+  let result = null;
+
+  // 1. Recupero da Cinemeta se l'ID IMDb è disponibile (gratuito e senza API key)
+  if (ids.imdb && ids.imdb.startsWith('tt')) {
+    try {
       const r = await fetch('https://v3-cinemeta.strem.io/meta/' + stremioType + '/' + ids.imdb + '.json');
       if (r.ok) {
         const meta = (await r.json())?.meta;
         if (meta) {
-          return {
+          result = {
             name: meta.name || '',
-            poster: meta.poster,
+            poster: meta.poster || ('https://images.metahub.space/poster/medium/' + ids.imdb + '/img'),
             background: meta.background,
             description: meta.description || '',
             genres: meta.genres || [],
@@ -221,26 +218,47 @@ async function enrich(ids, stremioType) {
           };
         }
       }
-    }
-    if (!tmdbId) return null;
-    const [itR, enR, rating] = await Promise.all([
-      fetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=it-IT&api_key=' + TMDB_KEY),
-      fetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=en-US&api_key=' + TMDB_KEY),
-      imdbRatingFromCinemeta(ids.imdb, stremioType)
-    ]);
-    const it = itR.ok ? await itR.json() : null;
-    const en = enR.ok ? await enR.json() : null;
-    if (!it && !en) return null;
-    const b = it || en;
-    return {
-      name: (it && (it.title || it.name)) || (en && (en.title || en.name)) || '',
-      poster: tmdbImg(b.poster_path), background: tmdbImg(b.backdrop_path),
-      description: (it && it.overview) || (en && en.overview) || '',
-      genres: ((it && it.genres) || (en && en.genres) || []).map(g => g.name),
-      imdbRating: rating || (b.vote_average ? String(b.vote_average.toFixed(1)) : undefined),
-      year: parseInt(((b.release_date || b.first_air_date) || '').slice(0, 4)) || undefined
-    };
-  } catch (e) { return null; }
+    } catch (e) {}
+  }
+
+  // 2. Se è presente TMDB_KEY, arricchisce con titolo e descrizione in italiano da TMDB
+  if (TMDB_KEY) {
+    try {
+      let tmdbId = ids.tmdb;
+      if (!tmdbId && ids.imdb) {
+        const r = await fetch('https://api.themoviedb.org/3/find/' + ids.imdb + '?external_source=imdb_id&api_key=' + TMDB_KEY);
+        if (r.ok) { const d = await r.json(); const arr = tmdbType === 'movie' ? d.movie_results : d.tv_results; if (arr && arr[0]) tmdbId = arr[0].id; }
+      }
+      if (tmdbId) {
+        const [itR, enR] = await Promise.all([
+          fetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=it-IT&api_key=' + TMDB_KEY),
+          fetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=en-US&api_key=' + TMDB_KEY)
+        ]);
+        const it = itR.ok ? await itR.json() : null;
+        const en = enR.ok ? await enR.json() : null;
+        const b = it || en;
+        if (b) {
+          result = {
+            name: (it && (it.title || it.name)) || (en && (en.title || en.name)) || (result && result.name) || '',
+            poster: tmdbImg(b.poster_path) || (result && result.poster) || (ids.imdb ? 'https://images.metahub.space/poster/medium/' + ids.imdb + '/img' : ''),
+            background: tmdbImg(b.backdrop_path) || (result && result.background),
+            description: (it && it.overview) || (en && en.overview) || (result && result.description) || '',
+            genres: ((it && it.genres) || (en && en.genres) || []).map(g => g.name),
+            imdbRating: (result && result.imdbRating) || (b.vote_average ? String(b.vote_average.toFixed(1)) : undefined),
+            year: parseInt(((b.release_date || b.first_air_date) || '').slice(0, 4)) || (result && result.year) || undefined
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 3. Fallback garantito per la locandina tramite Metahub se presente IMDb ID
+  if ((!result || !result.poster) && ids.imdb && ids.imdb.startsWith('tt')) {
+    result = result || {};
+    result.poster = 'https://images.metahub.space/poster/medium/' + ids.imdb + '/img';
+  }
+
+  return result;
 }
 
 async function buildCatalog(simklType) {
