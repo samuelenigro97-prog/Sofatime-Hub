@@ -31,6 +31,9 @@ const SIMKL_API      = 'https://api.simkl.com';
 const CACHE_TTL      = 60 * 1000;          // 1 min
 const META_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 ore
 const META_CACHE_VER = 2;
+// Quanti minuti tra un fetch automatico del backup e il prossimo
+// (es: 30 = rilegge ogni 30 min). 0 = disabilitato.
+const BACKUP_REFRESH_MIN = parseInt(process.env.BACKUP_REFRESH_MIN || '30');
 
 const MOVIE_GENRES  = ['Azione','Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantasy','Horror','Mistero','Romantico','Fantascienza','Thriller','Guerra','Western'];
 const SERIES_GENRES = ['Azione & Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantascienza & Fantasy','Horror','Mistero','Reality','Thriller','Western'];
@@ -135,8 +138,17 @@ function stremioIdFromSimkl(ids) {
   return null;
 }
 
-// Watchlist "plan to watch" da Sofa Time backup o Simkl API
+// Watchlist "plan to watch" da cache backup (se disponibile) o Sofa Time backup URL/file o Simkl API
 async function getPlanToWatch(simklType) {
+  // 0. Usa la cache in memoria del backup (aggiornata dal poller automatico)
+  if (cachedBackupData) {
+    const items = simklType === 'movies' ? cachedBackupData.movies : cachedBackupData.shows;
+    if (items && items.length > 0) {
+      return items.filter(x => stremioIdFromSimkl(x.ids));
+    }
+  }
+
+  // 1. Scarica il backup da URL (prima esecuzione o se il poller non è ancora partito)
   const backupSource = SOFATIME_BACKUP_URL || SOFATIME_BACKUP_PATH;
   if (SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)) {
     const sofaData = await loadSofaTimeBackup(backupSource);
@@ -148,6 +160,8 @@ async function getPlanToWatch(simklType) {
       }
     }
   }
+
+  // 2. Fallback: API Simkl sync (se configurata)
   if (SIMKL_CLIENT_ID) {
     const data = await simklGet('/sync/all-items/' + simklType + '/plantowatch?extended=full');
     if (!data) return [];
@@ -170,6 +184,70 @@ async function removeFromWatchlist(stremioId, simklType) {
 async function markWatched(stremioId, simklType) {
   const key = simklType === 'movies' ? 'movies' : 'shows';
   return simklPost('/sync/history', { [key]: [{ ids: idsFromStremioId(stremioId), watched_at: new Date().toISOString() }] });
+}
+
+// ─── Auto-refresh backup da URL (GitHub Gist o link diretto) ─────────────────
+const backupStatus = {
+  lastFetchAt: null,
+  lastSuccessAt: null,
+  lastError: null,
+  moviesCount: 0,
+  showsCount: 0,
+  source: null
+};
+let cachedBackupData = null; // cache in memoria del backup corrente
+let backupFetchInFlight = false;
+
+async function fetchAndCacheBackup(force = false) {
+  const url = SOFATIME_BACKUP_URL;
+  if (!url) return; // nessun URL configurato
+  if (backupFetchInFlight) return;
+  backupFetchInFlight = true;
+  backupStatus.lastFetchAt = new Date().toISOString();
+  try {
+    console.log('[backup-auto] Scarico backup da:', url);
+    const res = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    // Controlla se il contenuto è cambiato (hash semplice)
+    const hash = require('crypto').createHash('md5').update(text).digest('hex');
+    if (!force && backupStatus._hash === hash) {
+      console.log('[backup-auto] Nessuna modifica al backup (hash invariato)');
+      backupStatus.lastSuccessAt = new Date().toISOString();
+      backupStatus.lastError = null;
+      return;
+    }
+    const { parseSofaTimeData } = require('./sofatimeParser');
+    const parsed = parseSofaTimeData(text);
+    if (!parsed || (!parsed.movies.length && !parsed.shows.length)) {
+      throw new Error('Backup vuoto o formato non riconosciuto');
+    }
+    cachedBackupData = parsed;
+    backupStatus._hash = hash;
+    backupStatus.lastSuccessAt = new Date().toISOString();
+    backupStatus.lastError = null;
+    backupStatus.moviesCount = parsed.movies.length;
+    backupStatus.showsCount = parsed.shows.length;
+    backupStatus.source = url;
+    console.log(`[backup-auto] ✅ Backup aggiornato: ${parsed.movies.length} film, ${parsed.shows.length} serie`);
+    // Invalida i cataloghi così vengono ricostruiti con i nuovi dati
+    ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming',
+     'sofatime-movies-random', 'sofatime-series-random'].forEach(k => delete cache[k]);
+  } catch (e) {
+    backupStatus.lastError = e.message;
+    console.warn('[backup-auto] ❌ Errore fetch backup:', e.message);
+  } finally {
+    backupFetchInFlight = false;
+  }
+}
+
+function startBackupPoller() {
+  if (!SOFATIME_BACKUP_URL || !BACKUP_REFRESH_MIN || BACKUP_REFRESH_MIN <= 0) return;
+  console.log(`[backup-auto] Polling attivo ogni ${BACKUP_REFRESH_MIN} minuti`);
+  // Prima fetch immediata all'avvio
+  fetchAndCacheBackup(true);
+  // Poi ogni N minuti
+  setInterval(() => fetchAndCacheBackup(false), BACKUP_REFRESH_MIN * 60 * 1000).unref();
 }
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -506,6 +584,7 @@ async function main() {
   });
 
   startKeepAlive();
+  startBackupPoller(); // Auto-ricarica il backup dal Gist/URL ogni BACKUP_REFRESH_MIN minuti
 
   const builder = new addonBuilder(manifest);
 
@@ -552,6 +631,26 @@ async function main() {
     keepAlive: !!process.env.RENDER,
     cataloghiInCache: Object.keys(cache).map(k => k + ':' + (cache[k]?.metas?.length || 0) + ' item')
   }));
+
+  // Stato dettagliato del backup automatico
+  app.get('/backup-status', (req, res) => res.json({
+    backupUrl: SOFATIME_BACKUP_URL ? '✅ configurato' : '❌ non configurato (imposta SOFATIME_BACKUP_URL su Render)',
+    pollingOgniMinuti: BACKUP_REFRESH_MIN,
+    ultimaFetch: backupStatus.lastFetchAt,
+    ultimoSuccesso: backupStatus.lastSuccessAt,
+    ultimoErrore: backupStatus.lastError,
+    film: backupStatus.moviesCount,
+    serie: backupStatus.showsCount,
+    cacheInMemoria: !!cachedBackupData
+  }));
+
+  // Endpoint per forzare il reload immediato del backup (utile dopo aver aggiornato il Gist)
+  app.post('/backup-refresh', async (req, res) => {
+    const token = process.env.CLEAR_CACHE_TOKEN || '';
+    if (token && req.query.token !== token) return res.status(403).json({ error: 'forbidden' });
+    await fetchAndCacheBackup(true);
+    res.json({ ok: true, film: backupStatus.moviesCount, serie: backupStatus.showsCount, errore: backupStatus.lastError });
+  });
 
   const htmlPage = (title, msg, color) => `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
