@@ -617,19 +617,7 @@ async function main() {
     }
   });
 
-  builder.defineStreamHandler(async ({ type, id }) => {
-    const simklType = type === 'movie' ? 'movies' : 'shows';
-    const cid = 'sofatime-' + (type === 'movie' ? 'movies' : 'series');
-    const inList = !!(((cache[cid] && cache[cid].metas) || []).find(m => m.id === id));
-    return {
-      streams: [
-        { name: 'Sofa Time HUB', description: inList ? '🗑️ Rimuovi da Da vedere' : '➕ Aggiungi a Da vedere',
-          externalUrl: ADDON_URL + '/simkl/' + (inList ? 'remove' : 'add') + '/' + simklType + '/' + id },
-        { name: 'Sofa Time HUB', description: '✅ Segna come visto',
-          externalUrl: ADDON_URL + '/simkl/watched/' + simklType + '/' + id }
-      ]
-    };
-  });
+
 
   const app = express();
   app.use(express.static(__dirname));
