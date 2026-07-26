@@ -556,12 +556,12 @@ const manifest = {
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie',  id: 'sofatime-movies',          name: '🛋️ Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series',          name: '🛋️ Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-random',   name: '🎲 Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series-random',   name: '🎲 Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-upcoming', name: '📅 In arrivo',     extra: [{ name: 'skip' }] },
-    { type: 'series', id: 'sofatime-series-upcoming', name: '📅 In arrivo',     extra: [{ name: 'skip' }] }
+    { type: 'movie',  id: 'sofatime-movies',          name: 'Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series',          name: 'Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-random',   name: 'Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-upcoming', name: 'In arrivo',     extra: [{ name: 'skip' }] },
+    { type: 'series', id: 'sofatime-series-upcoming', name: 'In arrivo',     extra: [{ name: 'skip' }] }
   ],
   idPrefixes: ['tt', 'tmdb:'],
   logo: ADDON_URL + '/logo.png',
