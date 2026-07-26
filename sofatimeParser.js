@@ -46,7 +46,7 @@ function parseSofaTimeData(data) {
   const root = jsonObj.data || jsonObj.backup || jsonObj;
 
   // Analizza elementi in watchlist / to_watch / plantowatch
-  const watchlistCandidates = [
+  const watchlistCandidates = Array.isArray(root) ? root : [
     ...(root.watchlist || []),
     ...(root.to_watch || []),
     ...(root.plantowatch || []),
