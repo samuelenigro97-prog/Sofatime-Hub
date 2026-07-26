@@ -87,7 +87,7 @@ async function authenticatePinFlow() {
   const r = await fetch(SIMKL_API + '/oauth/pin?client_id=' + SIMKL_CLIENT_ID);
   const j = await r.json();
   console.log('\n════════════════════════════════════════');
-  console.log(' Autorizza Sofa Time Hub (Simkl Sync):');
+  console.log(' Autorizza Sofa Time HUB (Simkl Sync):');
   console.log(' 1) Vai su: ' + (j.verification_url || 'https://simkl.com/pin'));
   console.log(' 2) Inserisci il codice: ' + j.user_code);
   console.log('════════════════════════════════════════\n');
@@ -473,7 +473,7 @@ function startKeepAlive() {
 const manifest = {
   id: 'it.samuele.sofatime.hub',
   version: '0.5.0',
-  name: 'Sofa Time Hub',
+  name: 'Sofa Time HUB',
   description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Da vedere, Scegli per me, In arrivo, Scrobbling e Live Sync.',
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
@@ -531,9 +531,9 @@ async function main() {
     const inList = !!(((cache[cid] && cache[cid].metas) || []).find(m => m.id === id));
     return {
       streams: [
-        { name: 'Sofa Time Hub', description: inList ? '🗑️ Rimuovi da Da vedere' : '➕ Aggiungi a Da vedere',
+        { name: 'Sofa Time HUB', description: inList ? '🗑️ Rimuovi da Da vedere' : '➕ Aggiungi a Da vedere',
           externalUrl: ADDON_URL + '/simkl/' + (inList ? 'remove' : 'add') + '/' + simklType + '/' + id },
-        { name: 'Sofa Time Hub', description: '✅ Segna come visto',
+        { name: 'Sofa Time HUB', description: '✅ Segna come visto',
           externalUrl: ADDON_URL + '/simkl/watched/' + simklType + '/' + id }
       ]
     };
@@ -569,7 +569,7 @@ h1{color:${color};margin-bottom:.5rem;font-size:1.6rem}p{color:#aaa;margin:0;fon
 .box{text-align:center;padding:2.5rem;background:#1a1a2e;border-radius:1.25rem;border:2px solid #e7b700;max-width:420px;box-shadow:0 0 40px #e7b70033}
 h1{color:#e7b700}.spin{display:inline-block;animation:s 1s linear infinite;font-size:2rem;margin-bottom:1rem}
 @keyframes s{to{transform:rotate(360deg)}}</style></head>
-<body><div class="box"><div class="spin">🛋️</div><h1>⏳ Un attimo…</h1><p>Aggiorno Sofa Time.</p></div>
+<body><div class="box"><div class="spin">🛋️</div><h1>⏳ Un attimo…</h1><p>Aggiorno Sofa Time HUB.</p></div>
 <script>fetch(location.pathname,{method:'POST',headers:{'X-Confirm':'1'}}).then(r=>r.text()).then(h=>{document.open();document.write(h);document.close()}).catch(()=>{document.body.innerHTML='<div class=box><h1>❌ Errore</h1></div>'})</script></body></html>`;
 
   const rlHits = new Map();
@@ -603,19 +603,19 @@ h1{color:#e7b700}.spin{display:inline-block;animation:s 1s linear infinite;font-
     const r = await addToWatchlist(id, type);
     if (!r.ok) return htmlPage('❌ Errore', 'Sofa Time Sync ha risposto ' + r.status, '#f87171');
     invalidate(type); console.log('[watchlist] Aggiunto:', id);
-    return htmlPage('✅ Aggiunto!', 'Aggiunto a "Da vedere" su Sofa Time.', '#4ade80');
+    return htmlPage('✅ Aggiunto!', 'Aggiunto a "Da vedere" su Sofa Time HUB.', '#4ade80');
   });
   mutationRoute('/simkl/remove/:type/:id', async ({ type, id }) => {
     const r = await removeFromWatchlist(id, type);
     if (!r.ok) return htmlPage('❌ Errore', 'Sofa Time Sync ha risposto ' + r.status, '#f87171');
     invalidate(type); console.log('[watchlist] Rimosso:', id);
-    return htmlPage('🗑️ Rimosso!', 'Rimosso da "Da vedere" su Sofa Time.', '#fb923c');
+    return htmlPage('🗑️ Rimosso!', 'Rimosso da "Da vedere" su Sofa Time HUB.', '#fb923c');
   });
   mutationRoute('/simkl/watched/:type/:id', async ({ type, id }) => {
     const r = await markWatched(id, type);
     if (!r.ok) return htmlPage('❌ Errore', 'Sofa Time Sync ha risposto ' + r.status, '#f87171');
     invalidate(type); console.log('[watched] Segnato:', id);
-    return htmlPage('✅ Segnato come visto!', 'Sofa Time aggiornato.', '#4ade80');
+    return htmlPage('✅ Segnato come visto!', 'Sofa Time HUB aggiornato.', '#4ade80');
   });
 
   // Cache-clear protetto da token
@@ -632,7 +632,7 @@ h1{color:#e7b700}.spin{display:inline-block;animation:s 1s linear infinite;font-
   app.use(getRouter(builder.getInterface()));
 
   app.listen(PORT, () => {
-    console.log('Sofa Time Hub v' + manifest.version + ' pronto su ' + ADDON_URL);
+    console.log('Sofa Time HUB v' + manifest.version + ' pronto su ' + ADDON_URL);
     console.log('Manifest: ' + ADDON_URL + '/manifest.json');
     console.log('Cataloghi: ' + manifest.catalogs.length);
   });
