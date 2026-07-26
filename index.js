@@ -20,7 +20,8 @@ const STREMIO_EMAIL = process.env.STREMIO_EMAIL || 'stremioflixmanager@gmail.com
 const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || 'Stremio3691!';
 
 const PORT = parseInt(process.env.PORT || '7780');
-const ADDON_URL = (process.env.ADDON_URL || ('http://localhost:' + PORT)).replace(/\/$/, '');
+const RENDER_URL = 'https://sofa-time-hub.onrender.com';
+const ADDON_URL = (process.env.ADDON_URL || (process.env.RENDER ? RENDER_URL : 'http://localhost:' + PORT)).replace(/\/$/, '');
 const TOKEN_FILE = path.join(__dirname, 'simkl_token.json');
 const CACHE_FILE = path.join(__dirname, 'cache_data.json');
 const TOKEN_ENC_KEY = process.env.TOKEN_ENC_KEY || '';
@@ -295,9 +296,9 @@ async function getCatalogCached(catalogId, simklType) {
 // ─── Manifest ──────────────────────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.3.0',
-  name: 'Sofatime Hub',
-  description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Backup locale/URL, Scrobbling e Live Sync.',
+  version: '0.4.0',
+  name: 'Sofa Time Hub',
+  description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Backup locale/URL, Scrobbling automatico e Live Sync.',
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
   catalogs: [

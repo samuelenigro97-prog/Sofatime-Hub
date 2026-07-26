@@ -1,7 +1,7 @@
 {
-  "name": "sofatime-hub",
-  "description": "Sofatime Hub - Addon Stremio/Nuvio per la tua watchlist e visti di Sofa Time (Backup File & Live Sync)",
-  "version": "0.1.0",
+  "name": "sofa-time-hub",
+  "description": "Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)",
+  "version": "0.4.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
