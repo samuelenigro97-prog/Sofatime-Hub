@@ -440,26 +440,28 @@ async function buildCatalog(simklType) {
   const upcomingList = [];
   const releasedList = [];
 
-  for (let i = 0; i < items.length; i += 10) {
-    const batch = await Promise.all(items.slice(i, i + 10).map(async it => {
-      const id = stremioIdFromSimkl(it.ids);
-      const e  = await enrich(it.ids, stremioType);
-      return {
-        id, type: stremioType, tmdbId: (e && e.tmdbId) || '',
-        name: (e && e.name) || it.title || id,
-        poster: e && e.poster, background: e && e.background,
-        description: e && e.description,
-        genres: (e && e.genres) || [],
-        imdbRating: e && e.imdbRating,
-        year: (e && e.year) || it.year,
-        upcoming: !!(e && e.upcoming),
-        releaseDate: e && e.releaseDate
-      };
-    }));
-    for (const m of batch) {
-      if (m.upcoming) upcomingList.push(m);
-      else releasedList.push(m);
-    }
+  const batch = items.map(it => {
+    const id = stremioIdFromSimkl(it.ids);
+    const key = stremioType + ':' + id;
+    const e = metaCache[key]?.meta || null;
+    
+    return {
+      id, type: stremioType, tmdbId: (e && e.tmdbId) || (it.ids && it.ids.tmdb) || '',
+      name: (e && e.name) || it.title || id,
+      poster: (e && e.poster) || (it.ids && it.ids.imdb ? `https://images.metahub.space/poster/medium/${it.ids.imdb}/img` : undefined),
+      background: e && e.background,
+      description: e && e.description,
+      genres: (e && e.genres) || [],
+      imdbRating: e && e.imdbRating,
+      year: (e && e.year) || it.year,
+      upcoming: !!(e && e.upcoming),
+      releaseDate: e && e.releaseDate
+    };
+  });
+
+  for (const m of batch) {
+    if (m.upcoming) upcomingList.push(m);
+    else releasedList.push(m);
   }
 
   // Ordina upcoming per data uscita
