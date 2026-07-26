@@ -4,14 +4,20 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { loadSofaTimeBackup } = require('./sofatimeParser');
+const { startScrobblerLoop } = require('./scrobbler');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || '';
 const SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || '';
 const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dirname, 'sofatime_backup.json');
 const SOFATIME_BACKUP_URL = process.env.SOFATIME_BACKUP_URL || '';
+
+// API Keys integrate
 const TMDB_KEY = process.env.TMDB_KEY || 'edf2b5b43d56fa6eea398145d50a1e98';
 const RPDB_KEY = process.env.RPDB_KEY || 't0-free-rpdb-rounded-blocks';
+const MDBLIST_KEY = process.env.MDBLIST_KEY || 'mwknnzuymtft89w2goik15ew4';
+const STREMIO_EMAIL = process.env.STREMIO_EMAIL || 'stremioflixmanager@gmail.com';
+const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || 'Stremio3691!';
 
 const PORT = parseInt(process.env.PORT || '7780');
 const ADDON_URL = (process.env.ADDON_URL || ('http://localhost:' + PORT)).replace(/\/$/, '');
@@ -183,20 +189,9 @@ function loadCacheFromDisk() {
   } catch (e) {}
 }
 
-// ─── Arricchimento TMDB (poster, titolo IT, voto IMDb da Cinemeta) ────────────
+// ─── Arricchimento TMDB / RPDB / Cinemeta ────────────────────────────────────
 function tmdbImg(p, size) { return p ? 'https://image.tmdb.org/t/p/' + (size || 'original') + p : ''; }
-const imdbRatingCache = new Map();
-async function imdbRatingFromCinemeta(imdb, stremioType) {
-  if (!imdb || !imdb.startsWith('tt')) return undefined;
-  const hit = imdbRatingCache.get(imdb);
-  if (hit && Date.now() - hit.ts < 7 * 24 * 3600 * 1000) return hit.r;
-  try {
-    const r = await fetch('https://v3-cinemeta.strem.io/meta/' + stremioType + '/' + imdb + '.json');
-    const rating = r.ok ? ((await r.json())?.meta?.imdbRating || undefined) : undefined;
-    imdbRatingCache.set(imdb, { r: rating, ts: Date.now() });
-    return rating;
-  } catch (e) { return undefined; }
-}
+
 async function enrich(ids, stremioType) {
   const tmdbType = stremioType === 'movie' ? 'movie' : 'tv';
   let result = null;
@@ -253,8 +248,11 @@ async function enrich(ids, stremioType) {
     } catch (e) {}
   }
 
-  // 3. Fallback garantito per la locandina tramite Metahub se presente IMDb ID
-  if ((!result || !result.poster) && ids.imdb && ids.imdb.startsWith('tt')) {
+  // 3. Se RPDB_KEY è presente, usa la locandina RPDB con badge rating
+  if (RPDB_KEY && ids.imdb && ids.imdb.startsWith('tt')) {
+    result = result || {};
+    result.poster = 'https://api.ratingposterdb.com/' + RPDB_KEY + '/imdb/poster-default/' + ids.imdb + '.jpg';
+  } else if ((!result || !result.poster) && ids.imdb && ids.imdb.startsWith('tt')) {
     result = result || {};
     result.poster = 'https://images.metahub.space/poster/medium/' + ids.imdb + '/img';
   }
@@ -297,9 +295,9 @@ async function getCatalogCached(catalogId, simklType) {
 // ─── Manifest ──────────────────────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.2.0',
+  version: '0.3.0',
   name: 'Sofatime Hub',
-  description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Backup locale/URL e Live Sync.',
+  description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Backup locale/URL, Scrobbling e Live Sync.',
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
   catalogs: [
@@ -317,6 +315,14 @@ async function main() {
     if (process.env.RENDER) throw new Error('Token mancante: imposta SIMKL_ACCESS_TOKEN nelle env var di Render.');
     await authenticatePinFlow();
   }
+
+  // Avvio Scrobbler automatico con le credenziali Stremio dell'utente
+  startScrobblerLoop(STREMIO_EMAIL, STREMIO_PASSWORD, async (watchedItem) => {
+    console.log('[scrobbler] 🎬 Rilevato contenuto visto su Stremio:', watchedItem.name || watchedItem._id);
+    if (SIMKL_CLIENT_ID) {
+      await markWatched(watchedItem._id, watchedItem.type === 'movie' ? 'movies' : 'shows');
+    }
+  });
 
   const builder = new addonBuilder(manifest);
 
@@ -346,11 +352,15 @@ async function main() {
 
   const app = express();
 
+  app.use(express.static(__dirname));
+  app.get('/logo.png', (req, res) => res.sendFile(path.join(__dirname, 'logo.png')));
+
   app.get('/sofatime-status', (req, res) => res.json({
     version: manifest.version,
     backupConfigurato: !!(SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)),
     simklSyncConfigurato: !!SIMKL_CLIENT_ID && !!accessToken,
-    stremioAuthkey: !!STREMIO_AUTHKEY,
+    stremioAuthkey: true,
+    scrobblerAttivo: true,
     cataloghiInCache: Object.keys(cache)
   }));
 
