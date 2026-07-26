@@ -10,7 +10,8 @@ const SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || '';
 const SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || '';
 const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dirname, 'sofatime_backup.json');
 const SOFATIME_BACKUP_URL = process.env.SOFATIME_BACKUP_URL || '';
-const TMDB_KEY = process.env.TMDB_KEY || '';
+const TMDB_KEY = process.env.TMDB_KEY || 'edf2b5b43d56fa6eea398145d50a1e98';
+const RPDB_KEY = process.env.RPDB_KEY || 't0-free-rpdb-rounded-blocks';
 
 const PORT = parseInt(process.env.PORT || '7780');
 const ADDON_URL = (process.env.ADDON_URL || ('http://localhost:' + PORT)).replace(/\/$/, '');
@@ -296,7 +297,7 @@ async function getCatalogCached(catalogId, simklType) {
 // ─── Manifest ──────────────────────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.1.0',
+  version: '0.2.0',
   name: 'Sofatime Hub',
   description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Backup locale/URL e Live Sync.',
   resources: ['catalog', 'stream'],
