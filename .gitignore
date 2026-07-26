@@ -7,3 +7,4 @@ nohup.out
 *.log
 .simkl_token_raw
 simkl_token.json
+sofatime_backup.json
