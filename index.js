@@ -652,6 +652,76 @@ async function main() {
     res.json({ ok: true, film: backupStatus.moviesCount, serie: backupStatus.showsCount, errore: backupStatus.lastError });
   });
 
+  // Interfaccia Web per caricare il backup comodamente dall'iPhone (elimina la necessità dello Shortcut)
+  app.get('/upload', (req, res) => {
+    res.type('html').send(`<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Carica Backup Sofa Time</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{font-family:'Inter',system-ui,sans-serif;background:#0d0d1a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.box{text-align:center;padding:2.5rem;background:#1a1a2e;border-radius:1.25rem;border:2px solid #e7b700;max-width:420px;box-shadow:0 0 40px #e7b70033}
+h1{color:#e7b700;margin-bottom:.5rem;font-size:1.6rem}p{color:#aaa;margin-bottom:1.5rem;font-size:.95rem}
+button{background:#e7b700;color:#0d0d1a;border:none;padding:12px 20px;font-size:1rem;font-weight:600;border-radius:8px;cursor:pointer;margin-top:1rem;width:100%}
+button:disabled{background:#555;cursor:not-allowed}
+input[type=file]{display:none}.file-label{display:block;padding:20px;background:#16213e;border:2px dashed #444;border-radius:8px;cursor:pointer;margin-bottom:1rem;color:#888;word-break:break-all}
+.file-label:hover{border-color:#e7b700;color:#eee}</style></head>
+<body><div class="box"><h1>🛋️ Aggiorna Sofa Time</h1><p>Seleziona il backup esportato da Sofa Time per aggiornare i tuoi cataloghi su Stremio.</p>
+<label class="file-label" id="lbl">Seleziona file .json...</label><input type="file" id="file" accept=".json,.sofa3bk" />
+<button id="btn" disabled>Carica ora</button><p id="msg" style="margin-top:1.5rem;font-weight:600;"></p></div>
+<script>
+const f = document.getElementById('file'), l = document.getElementById('lbl'), b = document.getElementById('btn'), m = document.getElementById('msg');
+f.addEventListener('change', () => { if(f.files[0]) { l.textContent = f.files[0].name; l.style.borderColor = '#e7b700'; l.style.color = '#eee'; b.disabled = false; } });
+b.addEventListener('click', () => {
+  const r = new FileReader();
+  r.onload = async (e) => {
+    b.disabled = true; b.textContent = 'Caricamento in corso...'; m.textContent = '';
+    try {
+      const res = await fetch('/api/upload-backup', { method: 'POST', body: e.target.result, headers: {'Content-Type':'application/json'} });
+      const data = await res.json();
+      if(data.ok) { m.style.color = '#4ade80'; m.textContent = '✅ Fatto! ' + data.film + ' film e ' + data.serie + ' serie aggiornati.'; b.textContent = 'Completato'; }
+      else { m.style.color = '#f87171'; m.textContent = '❌ Errore: ' + (data.error||'Sconosciuto'); b.disabled = false; b.textContent = 'Riprova'; }
+    } catch(err) { m.style.color = '#f87171'; m.textContent = '❌ Errore di rete'; b.disabled = false; b.textContent = 'Riprova'; }
+  };
+  r.readAsText(f.files[0]);
+});
+</script></body></html>`);
+  });
+
+  // API che riceve il file dall'interfaccia web e lo carica sul Gist
+  app.post('/api/upload-backup', express.text({ type: '*/*', limit: '50mb' }), async (req, res) => {
+    try {
+      const text = req.body;
+      const { parseSofaTimeData } = require('./sofatimeParser');
+      const parsed = parseSofaTimeData(text);
+      if (!parsed || (!parsed.movies.length && !parsed.shows.length)) return res.status(400).json({ error: 'Formato file non valido o vuoto' });
+      
+      // Aggiorna la cache in memoria e invalida i cataloghi
+      cachedBackupData = parsed;
+      backupStatus.moviesCount = parsed.movies.length;
+      backupStatus.showsCount = parsed.shows.length;
+      backupStatus.lastSuccessAt = new Date().toISOString();
+      backupStatus.lastError = null;
+      ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming', 'sofatime-movies-random', 'sofatime-series-random'].forEach(k => delete cache[k]);
+
+      // Carica il file sul Gist se le credenziali sono presenti
+      const gistId = process.env.GITHUB_GIST_ID;
+      const gistToken = process.env.GITHUB_GIST_TOKEN;
+      if (gistId && gistToken) {
+        const ghRes = await fetch('https://api.github.com/gists/' + gistId, {
+          method: 'PATCH',
+          headers: { 'Authorization': 'Bearer ' + gistToken, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: { 'sofatime_backup.json': { content: text } } })
+        });
+        if (!ghRes.ok) console.warn('[upload] Errore caricamento Gist:', await ghRes.text());
+        else console.log('[upload] Gist aggiornato con successo');
+      }
+
+      res.json({ ok: true, film: parsed.movies.length, serie: parsed.shows.length });
+    } catch (e) {
+      console.error('[upload] errore:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const htmlPage = (title, msg, color) => `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
