@@ -7,33 +7,37 @@ const { loadSofaTimeBackup } = require('./sofatimeParser');
 const { startScrobblerLoop } = require('./scrobbler');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || '';
+const SIMKL_CLIENT_ID     = process.env.SIMKL_CLIENT_ID     || '';
 const SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || '';
 const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dirname, 'sofatime_backup.json');
-const SOFATIME_BACKUP_URL = process.env.SOFATIME_BACKUP_URL || '';
+const SOFATIME_BACKUP_URL  = process.env.SOFATIME_BACKUP_URL  || '';
 
-// API Keys integrate
-const TMDB_KEY = process.env.TMDB_KEY || 'edf2b5b43d56fa6eea398145d50a1e98';
-const RPDB_KEY = process.env.RPDB_KEY || 't0-free-rpdb-rounded-blocks';
-const MDBLIST_KEY = process.env.MDBLIST_KEY || 'mwknnzuymtft89w2goik15ew4';
-const STREMIO_EMAIL = process.env.STREMIO_EMAIL || 'stremioflixmanager@gmail.com';
+// API Keys
+const TMDB_KEY       = process.env.TMDB_KEY       || 'edf2b5b43d56fa6eea398145d50a1e98';
+const RPDB_KEY       = process.env.RPDB_KEY       || 't0-free-rpdb-rounded-blocks';
+const MDBLIST_KEY    = process.env.MDBLIST_KEY    || 'mwknnzuymtft89w2goik15ew4';
+const STREMIO_EMAIL  = process.env.STREMIO_EMAIL  || 'stremioflixmanager@gmail.com';
 const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || 'Stremio3691!';
 
-const PORT = parseInt(process.env.PORT || '7780');
+const PORT       = parseInt(process.env.PORT || '7780');
 const RENDER_URL = 'https://sofa-time-hub.onrender.com';
-const ADDON_URL = (process.env.ADDON_URL || (process.env.RENDER ? RENDER_URL : 'http://localhost:' + PORT)).replace(/\/$/, '');
+const ADDON_URL  = (process.env.ADDON_URL || (process.env.RENDER ? RENDER_URL : 'http://localhost:' + PORT)).replace(/\/$/, '');
 const TOKEN_FILE = path.join(__dirname, 'simkl_token.json');
 const CACHE_FILE = path.join(__dirname, 'cache_data.json');
-const TOKEN_ENC_KEY = process.env.TOKEN_ENC_KEY || '';
+const TOKEN_ENC_KEY   = process.env.TOKEN_ENC_KEY   || '';
 const STREMIO_AUTHKEY = process.env.STREMIO_AUTHKEY || '';
 
-const SIMKL_API = 'https://api.simkl.com';
-const CACHE_TTL = 60 * 1000;
-const META_CACHE_TTL = 24 * 60 * 60 * 1000;
+const SIMKL_API      = 'https://api.simkl.com';
+const CACHE_TTL      = 60 * 1000;          // 1 min
+const META_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 ore
+const META_CACHE_VER = 2;
+
+const MOVIE_GENRES  = ['Azione','Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantasy','Horror','Mistero','Romantico','Fantascienza','Thriller','Guerra','Western'];
+const SERIES_GENRES = ['Azione & Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantascienza & Fantasy','Horror','Mistero','Reality','Thriller','Western'];
 
 let accessToken = process.env.SIMKL_ACCESS_TOKEN || null;
 
-// ─── Persistenza sicura: cifratura token + scritture atomiche ─────────────────
+// ─── Token sicuro ─────────────────────────────────────────────────────────────
 const ENC_PREFIX = 'enc:v1:';
 function encKeyBytes() { return crypto.createHash('sha256').update(TOKEN_ENC_KEY).digest(); }
 function serializeToken(obj) {
@@ -77,13 +81,13 @@ function loadToken() {
   return false;
 }
 
-// ─── Auth Simkl: PIN flow (device) ────────────────────────────────────────────
+// ─── Auth Simkl: PIN flow ─────────────────────────────────────────────────────
 async function authenticatePinFlow() {
   if (!SIMKL_CLIENT_ID) return false;
   const r = await fetch(SIMKL_API + '/oauth/pin?client_id=' + SIMKL_CLIENT_ID);
   const j = await r.json();
   console.log('\n════════════════════════════════════════');
-  console.log(' Autorizza Sofatime Hub (Simkl Sync):');
+  console.log(' Autorizza Sofa Time Hub (Simkl Sync):');
   console.log(' 1) Vai su: ' + (j.verification_url || 'https://simkl.com/pin'));
   console.log(' 2) Inserisci il codice: ' + j.user_code);
   console.log('════════════════════════════════════════\n');
@@ -100,7 +104,7 @@ async function authenticatePinFlow() {
   throw new Error('Autorizzazione Simkl scaduta.');
 }
 
-// ─── Client HTTP Simkl ────────────────────────────────────────────────────────
+// ─── Simkl HTTP ───────────────────────────────────────────────────────────────
 function simklHeaders() {
   const h = { 'Content-Type': 'application/json', 'simkl-api-key': SIMKL_CLIENT_ID };
   if (accessToken) h['Authorization'] = 'Bearer ' + accessToken;
@@ -120,7 +124,7 @@ async function simklPost(pathUrl, body) {
 }
 
 function idsFromStremioId(stremioId) {
-  if (stremioId.startsWith('tt')) return { imdb: stremioId };
+  if (stremioId.startsWith('tt'))    return { imdb: stremioId };
   if (stremioId.startsWith('tmdb:')) return { tmdb: parseInt(stremioId.slice(5)) };
   return {};
 }
@@ -131,9 +135,8 @@ function stremioIdFromSimkl(ids) {
   return null;
 }
 
-// Watchlist "plan to watch" o Backup Sofa Time. simklType: 'movies' | 'shows'
+// Watchlist "plan to watch" da Sofa Time backup o Simkl API
 async function getPlanToWatch(simklType) {
-  // 1. Prova prima il backup Sofa Time se specificato o se esiste il file
   const backupSource = SOFATIME_BACKUP_URL || SOFATIME_BACKUP_PATH;
   if (SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)) {
     const sofaData = await loadSofaTimeBackup(backupSource);
@@ -145,8 +148,6 @@ async function getPlanToWatch(simklType) {
       }
     }
   }
-
-  // 2. Se non c'è backup file o se è vuoto, usa l'API Simkl Sync
   if (SIMKL_CLIENT_ID) {
     const data = await simklGet('/sync/all-items/' + simklType + '/plantowatch?extended=full');
     if (!data) return [];
@@ -155,9 +156,9 @@ async function getPlanToWatch(simklType) {
       return { ids: o.ids || {}, title: o.title, year: o.year };
     }).filter(x => stremioIdFromSimkl(x.ids));
   }
-
   return [];
 }
+
 async function addToWatchlist(stremioId, simklType) {
   const key = simklType === 'movies' ? 'movies' : 'shows';
   return simklPost('/sync/add-to-list', { [key]: [{ to: 'plantowatch', ids: idsFromStremioId(stremioId) }] });
@@ -171,9 +172,11 @@ async function markWatched(stremioId, simklType) {
   return simklPost('/sync/history', { [key]: [{ ids: idsFromStremioId(stremioId), watched_at: new Date().toISOString() }] });
 }
 
-// ─── Cache leggera ────────────────────────────────────────────────────────────
+// ─── Cache ────────────────────────────────────────────────────────────────────
 const cache = {};
 const metaCache = {};
+const translationCache = new Map();
+
 function saveCacheToDisk() {
   const tmp = CACHE_FILE + '.tmp-' + process.pid;
   fs.writeFile(tmp, JSON.stringify({ catalog: cache, meta: metaCache }), e => {
@@ -186,73 +189,136 @@ function loadCacheFromDisk() {
     if (!fs.existsSync(CACHE_FILE)) return;
     const d = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
     Object.assign(cache, d.catalog || {});
-    for (const [k, v] of Object.entries(d.meta || {})) if (Date.now() - v.ts < META_CACHE_TTL) metaCache[k] = v;
-  } catch (e) {}
+    for (const [k, v] of Object.entries(d.meta || {})) {
+      if (Date.now() - v.ts < META_CACHE_TTL && v.v === META_CACHE_VER) metaCache[k] = v;
+    }
+    console.log('[cache-disk] Caricati ' + Object.keys(cache).length + ' cataloghi, ' + Object.keys(metaCache).length + ' meta');
+  } catch (e) { console.warn('[cache-disk] errore:', e.message); }
 }
 
-// ─── Arricchimento TMDB / RPDB / Cinemeta ────────────────────────────────────
-function tmdbImg(p, size) { return p ? 'https://image.tmdb.org/t/p/' + (size || 'original') + p : ''; }
+// ─── TMDB helpers (come Trakt Hub) ───────────────────────────────────────────
+const POSTER_SIZE   = 'original';
+const BACKDROP_SIZE = 'original';
 
+function posterUrl(p)   { if (!p) return null; return p.startsWith('http') ? p : 'https://image.tmdb.org/t/p/' + POSTER_SIZE + p; }
+function backdropUrl(p) { if (!p) return null; return p.startsWith('http') ? p : 'https://image.tmdb.org/t/p/' + BACKDROP_SIZE + p; }
+
+function bestPosterPath(images, fallback) {
+  const posters = images?.posters || [];
+  if (!posters.length) return fallback;
+  const prio = p => p.iso_639_1 === 'it' ? 0 : p.iso_639_1 === 'en' ? 1 : p.iso_639_1 === null ? 2 : 3;
+  return [...posters].sort((a, b) => prio(a) - prio(b) || (b.vote_average || 0) - (a.vote_average || 0))[0]?.file_path || fallback;
+}
+function bestBackdropPath(images, fallback) {
+  const bk = images?.backdrops || [];
+  if (!bk.length) return fallback;
+  const prio = p => p.iso_639_1 === null ? 0 : p.iso_639_1 === 'en' ? 1 : 2;
+  return [...bk].sort((a, b) => prio(a) - prio(b) || (b.vote_average || 0) - (a.vote_average || 0))[0]?.file_path || fallback;
+}
+function localizedTitle(it, en) {
+  const itTitle = it?.title || it?.name || '';
+  const enTitle = en?.title || en?.name || '';
+  const original = (it || en)?.original_title || (it || en)?.original_name || '';
+  const originalLang = (it || en)?.original_language || '';
+  if (itTitle && (itTitle !== original || originalLang === 'it')) return itTitle;
+  return enTitle || itTitle;
+}
+
+async function translateToItalian(text) {
+  if (!text || !text.trim()) return '';
+  if (translationCache.has(text)) return translationCache.get(text);
+  try {
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=it&dt=t&q=' + encodeURIComponent(text.slice(0, 1000));
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return text;
+    const data = await res.json();
+    const translated = data[0].map(c => c[0]).join('');
+    if (translated && translated !== text) { translationCache.set(text, translated); return translated; }
+    return text;
+  } catch (e) { return text; }
+}
+
+function tmdbFetch(url, timeoutMs = 10000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(url, { signal: ctrl.signal })
+    .then(r => { clearTimeout(t); return r; })
+    .catch(() => { clearTimeout(t); return null; });
+}
+
+// Arricchimento completo: Cinemeta → TMDB IT+EN → RPDB poster
 async function enrich(ids, stremioType) {
   const tmdbType = stremioType === 'movie' ? 'movie' : 'tv';
   let result = null;
 
-  // 1. Recupero da Cinemeta se l'ID IMDb è disponibile (gratuito e senza API key)
+  // 1. Cinemeta (gratuito, ottima qualità dati base)
   if (ids.imdb && ids.imdb.startsWith('tt')) {
     try {
-      const r = await fetch('https://v3-cinemeta.strem.io/meta/' + stremioType + '/' + ids.imdb + '.json');
-      if (r.ok) {
+      const r = await tmdbFetch('https://v3-cinemeta.strem.io/meta/' + stremioType + '/' + ids.imdb + '.json');
+      if (r?.ok) {
         const meta = (await r.json())?.meta;
-        if (meta) {
-          result = {
-            name: meta.name || '',
-            poster: meta.poster || ('https://images.metahub.space/poster/medium/' + ids.imdb + '/img'),
-            background: meta.background,
-            description: meta.description || '',
-            genres: meta.genres || [],
-            imdbRating: meta.imdbRating,
-            year: meta.year
-          };
-        }
+        if (meta) result = { name: meta.name, poster: meta.poster, background: meta.background, description: meta.description || '', genres: meta.genres || [], imdbRating: meta.imdbRating, year: meta.year };
       }
     } catch (e) {}
   }
 
-  // 2. Se è presente TMDB_KEY, arricchisce con titolo e descrizione in italiano da TMDB
+  // 2. TMDB: titolo/descrizione IT, poster migliore, backdrop migliore
   if (TMDB_KEY) {
     try {
       let tmdbId = ids.tmdb;
       if (!tmdbId && ids.imdb) {
-        const r = await fetch('https://api.themoviedb.org/3/find/' + ids.imdb + '?external_source=imdb_id&api_key=' + TMDB_KEY);
-        if (r.ok) { const d = await r.json(); const arr = tmdbType === 'movie' ? d.movie_results : d.tv_results; if (arr && arr[0]) tmdbId = arr[0].id; }
+        const r = await tmdbFetch('https://api.themoviedb.org/3/find/' + ids.imdb + '?external_source=imdb_id&api_key=' + TMDB_KEY);
+        if (r?.ok) {
+          const d = await r.json();
+          const arr = tmdbType === 'movie' ? d.movie_results : d.tv_results;
+          if (arr && arr[0]) tmdbId = arr[0].id;
+        }
       }
       if (tmdbId) {
+        const append = tmdbType === 'movie' ? 'images,release_dates' : 'images';
         const [itR, enR] = await Promise.all([
-          fetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=it-IT&api_key=' + TMDB_KEY),
-          fetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=en-US&api_key=' + TMDB_KEY)
+          tmdbFetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=it-IT&append_to_response=' + append + '&include_image_language=it,en,null&api_key=' + TMDB_KEY),
+          tmdbFetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=en-US&api_key=' + TMDB_KEY)
         ]);
-        const it = itR.ok ? await itR.json() : null;
-        const en = enR.ok ? await enR.json() : null;
-        const b = it || en;
-        if (b) {
+        const it = itR?.ok ? await itR.json() : null;
+        const en = enR?.ok ? await enR.json() : null;
+        if (it || en) {
+          const base = it || en;
+          const poster_path   = bestPosterPath(it?.images, base.poster_path);
+          const backdrop_path = bestBackdropPath(it?.images, base.backdrop_path);
+          let overview = it?.overview?.trim() || '';
+          if (!overview && en?.overview) overview = await translateToItalian(en.overview.trim());
+
+          // Data uscita
+          let releaseDate = base.release_date || base.first_air_date || null;
+          let upcoming = false;
+          if (releaseDate && new Date(releaseDate) > new Date()) {
+            upcoming = true;
+            const formatted = new Date(releaseDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+            const label = stremioType === 'movie' ? 'Uscita prevista' : 'Prima stagione dal';
+            overview = (overview ? overview + '\n\n' : '') + '📅 ' + label + ': ' + formatted;
+          }
+
           result = {
-            name: (it && (it.title || it.name)) || (en && (en.title || en.name)) || (result && result.name) || '',
-            poster: tmdbImg(b.poster_path) || (result && result.poster) || (ids.imdb ? 'https://images.metahub.space/poster/medium/' + ids.imdb + '/img' : ''),
-            background: tmdbImg(b.backdrop_path) || (result && result.background),
-            description: (it && it.overview) || (en && en.overview) || (result && result.description) || '',
-            genres: ((it && it.genres) || (en && en.genres) || []).map(g => g.name),
-            imdbRating: (result && result.imdbRating) || (b.vote_average ? String(b.vote_average.toFixed(1)) : undefined),
-            year: parseInt(((b.release_date || b.first_air_date) || '').slice(0, 4)) || (result && result.year) || undefined
+            name: localizedTitle(it, en) || (result && result.name) || '',
+            poster: posterUrl(poster_path) || (result && result.poster),
+            background: backdropUrl(backdrop_path) || (result && result.background),
+            description: overview || (result && result.description) || '',
+            genres: ((it?.genres || en?.genres) || []).map(g => g.name),
+            imdbRating: (result && result.imdbRating) || (base.vote_average ? String(base.vote_average.toFixed(1)) : undefined),
+            year: parseInt(releaseDate || '0') || (result && result.year) || undefined,
+            upcoming, releaseDate: upcoming ? releaseDate : null,
+            tmdbId: String(tmdbId || '')
           };
         }
       }
     } catch (e) {}
   }
 
-  // 3. Se RPDB_KEY è presente, usa la locandina RPDB con badge rating
+  // 3. RPDB poster con badge rating
   if (RPDB_KEY && ids.imdb && ids.imdb.startsWith('tt')) {
     result = result || {};
-    result.poster = 'https://api.ratingposterdb.com/' + RPDB_KEY + '/imdb/poster-default/' + ids.imdb + '.jpg';
+    result.poster = 'https://api.ratingposterdb.com/' + RPDB_KEY + '/imdb/poster-default/' + ids.imdb + '.jpg?fallback=true';
   } else if ((!result || !result.poster) && ids.imdb && ids.imdb.startsWith('tt')) {
     result = result || {};
     result.poster = 'https://images.metahub.space/poster/medium/' + ids.imdb + '/img';
@@ -261,49 +327,163 @@ async function enrich(ids, stremioType) {
   return result;
 }
 
+// ─── Prefetch meta in background (come Trakt Hub) ────────────────────────────
+function prefetchMeta(metas, stremioType) {
+  const toFetch = metas.filter(m => {
+    const key = stremioType + ':' + m.id;
+    const e = metaCache[key];
+    return !e || e.v !== META_CACHE_VER || (Date.now() - e.ts) >= META_CACHE_TTL;
+  });
+  if (!toFetch.length) return;
+  (async () => {
+    const BATCH = stremioType === 'series' ? 3 : 8;
+    const PAUSE = stremioType === 'series' ? 800 : 150;
+    for (let i = 0; i < toFetch.length; i += BATCH) {
+      await Promise.all(toFetch.slice(i, i + BATCH).map(async meta => {
+        const key = stremioType + ':' + meta.id;
+        try {
+          const ids = idsFromStremioId(meta.id);
+          if (ids.tmdb) ids.tmdb = parseInt(String(ids.tmdb));
+          const e = await enrich(ids, stremioType);
+          if (e) metaCache[key] = { meta: { ...meta, ...e }, ts: Date.now(), v: META_CACHE_VER };
+        } catch (e2) {}
+      }));
+      if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, PAUSE));
+    }
+    saveCacheToDisk();
+    console.log('[meta-prefetch] ' + stremioType + ': ' + toFetch.length + ' titoli pre-caricati');
+  })();
+}
+
+// ─── Catalog builder ──────────────────────────────────────────────────────────
 async function buildCatalog(simklType) {
   const stremioType = simklType === 'movies' ? 'movie' : 'series';
   const items = await getPlanToWatch(simklType);
-  const metas = [];
+  const upcomingList = [];
+  const releasedList = [];
+
   for (let i = 0; i < items.length; i += 10) {
-    const res = await Promise.all(items.slice(i, i + 10).map(async it => {
+    const batch = await Promise.all(items.slice(i, i + 10).map(async it => {
       const id = stremioIdFromSimkl(it.ids);
-      const e = await enrich(it.ids, stremioType);
+      const e  = await enrich(it.ids, stremioType);
       return {
-        id, type: stremioType, name: (e && e.name) || it.title || id,
-        poster: e && e.poster, background: e && e.background, description: e && e.description,
-        genres: e && e.genres, imdbRating: e && e.imdbRating, year: (e && e.year) || it.year
+        id, type: stremioType, tmdbId: (e && e.tmdbId) || '',
+        name: (e && e.name) || it.title || id,
+        poster: e && e.poster, background: e && e.background,
+        description: e && e.description,
+        genres: (e && e.genres) || [],
+        imdbRating: e && e.imdbRating,
+        year: (e && e.year) || it.year,
+        upcoming: !!(e && e.upcoming),
+        releaseDate: e && e.releaseDate
       };
     }));
-    metas.push(...res);
+    for (const m of batch) {
+      if (m.upcoming) upcomingList.push(m);
+      else releasedList.push(m);
+    }
   }
-  return metas;
+
+  // Ordina upcoming per data uscita
+  upcomingList.sort((a, b) => new Date(a.releaseDate || 0) - new Date(b.releaseDate || 0));
+
+  // Salva upcoming nella cache dedicata
+  const upcomingId = stremioType === 'movie' ? 'sofatime-movies-upcoming' : 'sofatime-series-upcoming';
+  cache[upcomingId] = { metas: upcomingList, ts: Date.now() };
+
+  return releasedList;
 }
-async function getCatalogCached(catalogId, simklType) {
+
+// "Scegli per me": shuffle con 1 titolo per genere
+async function buildRandom(stremioType, genre) {
+  const sourceId = stremioType === 'movie' ? 'sofatime-movies' : 'sofatime-series';
+  if (!cache[sourceId]) await getCatalogCached(sourceId, stremioType === 'movie' ? 'movies' : 'shows');
+  let source = cache[sourceId]?.metas || [];
+  if (genre) source = source.filter(m => m.genres && m.genres.includes(genre));
+  if (!source.length) return [];
+  return [...source].sort(() => Math.random() - 0.5).slice(0, 100);
+}
+
+async function getCatalogCached(catalogId, simklType, genre) {
+  const stremioType = simklType === 'movies' ? 'movie' : 'series';
+  const isRandom    = catalogId.includes('random');
+  const isUpcoming  = catalogId.includes('upcoming');
+
+  if (isRandom) return buildRandom(stremioType, genre);
+
+  if (isUpcoming) {
+    if (cache[catalogId]) {
+      // Promuovi automaticamente upcoming che ora sono usciti
+      const now = new Date();
+      const newReleased = (cache[catalogId].metas || []).filter(m => m.releaseDate && new Date(m.releaseDate) <= now);
+      if (newReleased.length) {
+        cache[catalogId] = { metas: (cache[catalogId].metas || []).filter(m => !newReleased.includes(m)), ts: Date.now() };
+        const mainId = catalogId.replace('-upcoming', '');
+        const cleaned = newReleased.map(({ upcoming, releaseDate, ...rest }) => rest);
+        if (cache[mainId]) cache[mainId] = { metas: (cache[mainId].metas || []).concat(cleaned), ts: Date.now() };
+        console.log('[upcoming→released] ' + newReleased.length + ' titoli spostati');
+        saveCacheToDisk();
+      }
+      return cache[catalogId].metas;
+    }
+    // Triggera build del catalogo principale che popola anche upcoming
+    await getCatalogCached(catalogId.replace('-upcoming', '').replace('-series', '-shows').replace('-movies', '-movies'), simklType);
+    return cache[catalogId]?.metas || [];
+  }
+
   const entry = cache[catalogId];
-  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.metas;
+  const stale = !entry || (Date.now() - entry.ts) >= CACHE_TTL;
+
+  if (!stale) return entry.metas;
+
+  // Stale-while-revalidate (come Trakt Hub)
   if (entry) {
     entry.ts = Date.now();
-    buildCatalog(simklType).then(m => { cache[catalogId] = { metas: m, ts: Date.now() }; saveCacheToDisk(); }).catch(() => {});
+    (async () => {
+      try {
+        const metas = await buildCatalog(simklType);
+        cache[catalogId] = { metas, ts: Date.now() };
+        prefetchMeta(metas, stremioType);
+        saveCacheToDisk();
+        console.log('[bg-refresh] ' + catalogId + ': ' + metas.length + ' elementi');
+      } catch (e) { console.warn('[bg-refresh] ' + catalogId + ':', e.message); }
+    })();
     return entry.metas;
   }
+
+  // Prima build
+  console.log('[cache miss] ' + catalogId + ' — aggiorno...');
   const metas = await buildCatalog(simklType);
   cache[catalogId] = { metas, ts: Date.now() };
+  prefetchMeta(metas, stremioType);
   saveCacheToDisk();
   return metas;
 }
 
-// ─── Manifest ──────────────────────────────────────────────────────────────────
+// ─── Keep-alive Render (evita cold start) ────────────────────────────────────
+function startKeepAlive() {
+  if (!process.env.RENDER) return;
+  setInterval(async () => {
+    try { await fetch(ADDON_URL + '/manifest.json'); console.log('[keep-alive] ping'); }
+    catch (e) { console.warn('[keep-alive] ping fallito:', e.message); }
+  }, 14 * 60 * 1000).unref();
+}
+
+// ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.4.0',
+  version: '0.5.0',
   name: 'Sofa Time Hub',
-  description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Backup locale/URL, Scrobbling automatico e Live Sync.',
+  description: 'La tua watchlist di Sofa Time (TVSofa) in Stremio/Nuvio: Da vedere, Scegli per me, In arrivo, Scrobbling e Live Sync.',
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie',  id: 'sofatime-movies', name: 'Sofa Time - Film da vedere', extra: [{ name: 'skip' }] },
-    { type: 'series', id: 'sofatime-series', name: 'Sofa Time - Serie da vedere', extra: [{ name: 'skip' }] }
+    { type: 'movie',  id: 'sofatime-movies',          name: '🛋️ Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series',          name: '🛋️ Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-random',   name: '🎲 Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-random',   name: '🎲 Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-upcoming', name: '📅 In arrivo',     extra: [{ name: 'skip' }] },
+    { type: 'series', id: 'sofatime-series-upcoming', name: '📅 In arrivo',     extra: [{ name: 'skip' }] }
   ],
   idPrefixes: ['tt', 'tmdb:'],
   logo: ADDON_URL + '/logo.png',
@@ -317,22 +497,28 @@ async function main() {
     await authenticatePinFlow();
   }
 
-  // Avvio Scrobbler automatico con le credenziali Stremio dell'utente
+  // Scrobbler automatico
   startScrobblerLoop(STREMIO_EMAIL, STREMIO_PASSWORD, async (watchedItem) => {
-    console.log('[scrobbler] 🎬 Rilevato contenuto visto su Stremio:', watchedItem.name || watchedItem._id);
+    console.log('[scrobbler] 🎬 Visto su Stremio:', watchedItem.name || watchedItem._id);
     if (SIMKL_CLIENT_ID) {
       await markWatched(watchedItem._id, watchedItem.type === 'movie' ? 'movies' : 'shows');
     }
   });
+
+  startKeepAlive();
 
   const builder = new addonBuilder(manifest);
 
   builder.defineCatalogHandler(async ({ type, id, extra }) => {
     try {
       const simklType = type === 'movie' ? 'movies' : 'shows';
-      const skip = parseInt((extra && extra.skip) || 0);
-      const all = await getCatalogCached(id, simklType);
-      return { metas: all.slice(skip, skip + 100) };
+      const skip  = parseInt((extra && extra.skip)  || 0);
+      const genre = (extra && extra.genre) || null;
+      const all   = await getCatalogCached(id, simklType, genre);
+      let filtered = genre
+        ? all.filter(m => m.genres && m.genres.includes(genre))
+        : all;
+      return { metas: filtered.slice(skip, skip + 100) };
     } catch (e) {
       console.error('[catalog]', e.message);
       return { metas: (cache[id] && cache[id].metas) || [] };
@@ -343,38 +529,47 @@ async function main() {
     const simklType = type === 'movie' ? 'movies' : 'shows';
     const cid = 'sofatime-' + (type === 'movie' ? 'movies' : 'series');
     const inList = !!(((cache[cid] && cache[cid].metas) || []).find(m => m.id === id));
-    return { streams: [
-      { name: 'Sofa Time', description: inList ? '🗑️ Rimuovi da Da vedere' : '➕ Aggiungi a Da vedere',
-        externalUrl: ADDON_URL + '/simkl/' + (inList ? 'remove' : 'add') + '/' + simklType + '/' + id },
-      { name: 'Sofa Time', description: '✅ Segna come visto',
-        externalUrl: ADDON_URL + '/simkl/watched/' + simklType + '/' + id }
-    ] };
+    return {
+      streams: [
+        { name: 'Sofa Time Hub', description: inList ? '🗑️ Rimuovi da Da vedere' : '➕ Aggiungi a Da vedere',
+          externalUrl: ADDON_URL + '/simkl/' + (inList ? 'remove' : 'add') + '/' + simklType + '/' + id },
+        { name: 'Sofa Time Hub', description: '✅ Segna come visto',
+          externalUrl: ADDON_URL + '/simkl/watched/' + simklType + '/' + id }
+      ]
+    };
   });
 
   const app = express();
-
   app.use(express.static(__dirname));
   app.get('/logo.png', (req, res) => res.sendFile(path.join(__dirname, 'logo.png')));
 
   app.get('/sofatime-status', (req, res) => res.json({
     version: manifest.version,
+    cataloghi: manifest.catalogs.map(c => c.id),
     backupConfigurato: !!(SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)),
     simklSyncConfigurato: !!SIMKL_CLIENT_ID && !!accessToken,
-    stremioAuthkey: true,
     scrobblerAttivo: true,
-    cataloghiInCache: Object.keys(cache)
+    keepAlive: !!process.env.RENDER,
+    cataloghiInCache: Object.keys(cache).map(k => k + ':' + (cache[k]?.metas?.length || 0) + ' item')
   }));
 
   const htmlPage = (title, msg, color) => `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
-<style>body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.box{text-align:center;padding:2rem;background:#16213e;border-radius:1rem;border:2px solid ${color};max-width:400px}
-h1{color:${color}}p{color:#aaa}</style></head><body><div class="box"><h1>${title}</h1><p>${msg}</p></div></body></html>`;
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{font-family:'Inter',system-ui,sans-serif;background:#0d0d1a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.box{text-align:center;padding:2.5rem;background:#1a1a2e;border-radius:1.25rem;border:2px solid ${color};max-width:420px;box-shadow:0 0 40px ${color}33}
+h1{color:${color};margin-bottom:.5rem;font-size:1.6rem}p{color:#aaa;margin:0;font-size:.95rem}
+.logo{font-size:3rem;display:block;margin-bottom:1rem}</style></head>
+<body><div class="box"><span class="logo">🛋️</span><h1>${title}</h1><p>${msg}</p></div></body></html>`;
+
   const confirmPage = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Attendere…</title>
-<style>body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.box{text-align:center;padding:2rem;background:#16213e;border-radius:1rem;border:2px solid #6366f1}</style></head>
-<body><div class="box"><h1>⏳ Un attimo…</h1><p>Aggiorno Sofa Time.</p></div>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{font-family:'Inter',system-ui,sans-serif;background:#0d0d1a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.box{text-align:center;padding:2.5rem;background:#1a1a2e;border-radius:1.25rem;border:2px solid #e7b700;max-width:420px;box-shadow:0 0 40px #e7b70033}
+h1{color:#e7b700}.spin{display:inline-block;animation:s 1s linear infinite;font-size:2rem;margin-bottom:1rem}
+@keyframes s{to{transform:rotate(360deg)}}</style></head>
+<body><div class="box"><div class="spin">🛋️</div><h1>⏳ Un attimo…</h1><p>Aggiorno Sofa Time.</p></div>
 <script>fetch(location.pathname,{method:'POST',headers:{'X-Confirm':'1'}}).then(r=>r.text()).then(h=>{document.open();document.write(h);document.close()}).catch(()=>{document.body.innerHTML='<div class=box><h1>❌ Errore</h1></div>'})</script></body></html>`;
 
   const rlHits = new Map();
@@ -423,12 +618,23 @@ h1{color:${color}}p{color:#aaa}</style></head><body><div class="box"><h1>${title
     return htmlPage('✅ Segnato come visto!', 'Sofa Time aggiornato.', '#4ade80');
   });
 
+  // Cache-clear protetto da token
+  const CLEAR_CACHE_TOKEN = process.env.CLEAR_CACHE_TOKEN || '';
+  app.get('/clear-cache', (req, res) => {
+    if (CLEAR_CACHE_TOKEN && req.query.token !== CLEAR_CACHE_TOKEN) return res.status(403).json({ error: 'forbidden' });
+    Object.keys(cache).forEach(k => delete cache[k]);
+    Object.keys(metaCache).forEach(k => delete metaCache[k]);
+    console.log('[cache] svuotata manualmente');
+    res.json({ ok: true, message: 'Cache svuotata' });
+  });
+
   app.use((req, res, next) => { res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); next(); });
   app.use(getRouter(builder.getInterface()));
 
   app.listen(PORT, () => {
-    console.log('Sofatime Hub pronto su ' + ADDON_URL);
+    console.log('Sofa Time Hub v' + manifest.version + ' pronto su ' + ADDON_URL);
     console.log('Manifest: ' + ADDON_URL + '/manifest.json');
+    console.log('Cataloghi: ' + manifest.catalogs.length);
   });
 }
 
