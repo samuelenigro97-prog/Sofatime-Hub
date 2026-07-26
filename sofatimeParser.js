@@ -66,7 +66,12 @@ function parseSofaTimeData(data) {
     // Filtra elementi non pertinenti o senza identificativi
     if (!title && !ids.imdb && !ids.tmdb) continue;
 
-    const entry = { ids, title, year };
+    const entry = { 
+      type: typeStr.includes('show') || typeStr.includes('tv') || typeStr.includes('series') || item.show ? 'show' : 'movie',
+      ids, 
+      title, 
+      year 
+    };
 
     if (typeStr.includes('movie') || item.movie) {
       result.movies.push(entry);
