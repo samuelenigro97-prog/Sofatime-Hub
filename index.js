@@ -693,10 +693,17 @@ b.addEventListener('click', () => {
       let parsed = { movies: [], shows: [] };
       const { parseSofaTimeData } = require('./sofatimeParser');
 
+      // Cerca la firma ZIP (PK) per ignorare eventuali header multipart (es. Comandi Rapidi Apple)
+      let zipBuffer = req.body;
+      if (Buffer.isBuffer(zipBuffer)) {
+        const zipStart = zipBuffer.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+        if (zipStart > 0) zipBuffer = zipBuffer.slice(zipStart);
+      }
+
       // Se è un buffer zip (inizia con magic number PK)
-      if (Buffer.isBuffer(req.body) && req.body.length > 4 && req.body[0] === 0x50 && req.body[1] === 0x4b) {
+      if (Buffer.isBuffer(zipBuffer) && zipBuffer.length > 4 && zipBuffer[0] === 0x50 && zipBuffer[1] === 0x4b) {
         const AdmZip = require('adm-zip');
-        const zip = new AdmZip(req.body);
+        const zip = new AdmZip(zipBuffer);
         const zipEntries = zip.getEntries();
         zipEntries.forEach(entry => {
           if (entry.name.toLowerCase().includes('watchlist') && entry.name.endsWith('.json')) {
