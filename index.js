@@ -479,6 +479,19 @@ async function buildRandom(stremioType, genre) {
   const sourceId = stremioType === 'movie' ? 'sofatime-movies' : 'sofatime-series';
   if (!cache[sourceId]) await getCatalogCached(sourceId, stremioType === 'movie' ? 'movies' : 'shows');
   let source = cache[sourceId]?.metas || [];
+  
+  // Filtra i titoli non ancora usciti (In arrivo)
+  const currentYear = new Date().getFullYear();
+  source = source.filter(m => {
+    const key = stremioType + ':' + m.id;
+    const e = metaCache[key]?.meta;
+    if (e && e.upcoming) return false;
+    if (m.upcoming) return false;
+    const year = parseInt(m.year || (e && e.year) || 0);
+    if (year > currentYear) return false;
+    return true;
+  });
+
   if (genre) source = source.filter(m => m.genres && m.genres.includes(genre));
   if (!source.length) return [];
   return [...source].sort(() => Math.random() - 0.5).slice(0, 100);
