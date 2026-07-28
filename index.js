@@ -557,16 +557,16 @@ function startKeepAlive() {
 // ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.7.0',
+  version: '0.7.1',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie',  id: 'sofatime-movies',          name: 'Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series',          name: 'Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series-random',   name: 'Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
+    { type: 'movie',  id: 'sofatime-movies',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
   ],
   idPrefixes: ['tt', 'tmdb:'],
   logo: ADDON_URL + '/logo.png',
