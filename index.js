@@ -173,14 +173,6 @@ async function getPlanToWatch(simklType) {
   return [];
 }
 
-async function addToWatchlist(stremioId, simklType) {
-  const key = simklType === 'movies' ? 'movies' : 'shows';
-  return simklPost('/sync/add-to-list', { [key]: [{ to: 'plantowatch', ids: idsFromStremioId(stremioId) }] });
-}
-async function removeFromWatchlist(stremioId, simklType) {
-  const key = simklType === 'movies' ? 'movies' : 'shows';
-  return simklPost('/sync/history/remove', { [key]: [{ ids: idsFromStremioId(stremioId) }] });
-}
 async function markWatched(stremioId, simklType) {
   const key = simklType === 'movies' ? 'movies' : 'shows';
   return simklPost('/sync/history', { [key]: [{ ids: idsFromStremioId(stremioId), watched_at: new Date().toISOString() }] });
@@ -565,16 +557,16 @@ function startKeepAlive() {
 // ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.6.0',
+  version: '0.7.1',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
-  resources: ['catalog', 'stream'],
+  resources: ['catalog'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie',  id: 'sofatime-movies',          name: 'Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series',          name: 'Da vedere',     extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series-random',   name: 'Scegli per me', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
+    { type: 'movie',  id: 'sofatime-movies',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
   ],
   idPrefixes: ['tt', 'tmdb:'],
   logo: ADDON_URL + '/logo.png',
@@ -616,8 +608,6 @@ async function main() {
       return { metas: (cache[id] && cache[id].metas) || [] };
     }
   });
-
-
 
   const app = express();
   app.use(express.static(__dirname));
@@ -764,71 +754,6 @@ b.addEventListener('click', () => {
       console.error('[upload] errore:', e.message);
       res.status(500).json({ error: e.message });
     }
-  });
-
-  const htmlPage = (title, msg, color) => `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-<style>*{box-sizing:border-box}body{font-family:'Inter',system-ui,sans-serif;background:#0d0d1a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.box{text-align:center;padding:2.5rem;background:#1a1a2e;border-radius:1.25rem;border:2px solid ${color};max-width:420px;box-shadow:0 0 40px ${color}33}
-h1{color:${color};margin-bottom:.5rem;font-size:1.6rem}p{color:#aaa;margin:0;font-size:.95rem}
-.logo{font-size:3rem;display:block;margin-bottom:1rem}</style></head>
-<body><div class="box"><span class="logo">🛋️</span><h1>${title}</h1><p>${msg}</p></div></body></html>`;
-
-  const confirmPage = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Attendere…</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-<style>*{box-sizing:border-box}body{font-family:'Inter',system-ui,sans-serif;background:#0d0d1a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.box{text-align:center;padding:2.5rem;background:#1a1a2e;border-radius:1.25rem;border:2px solid #e7b700;max-width:420px;box-shadow:0 0 40px #e7b70033}
-h1{color:#e7b700}.spin{display:inline-block;animation:s 1s linear infinite;font-size:2rem;margin-bottom:1rem}
-@keyframes s{to{transform:rotate(360deg)}}</style></head>
-<body><div class="box"><div class="spin">🛋️</div><h1>⏳ Un attimo…</h1><p>Aggiorno Sofa Time HUB.</p></div>
-<script>fetch(location.pathname,{method:'POST',headers:{'X-Confirm':'1'}}).then(r=>r.text()).then(h=>{document.open();document.write(h);document.close()}).catch(()=>{document.body.innerHTML='<div class=box><h1>❌ Errore</h1></div>'})</script></body></html>`;
-
-  const rlHits = new Map();
-  const rateLimited = req => {
-    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-    const now = Date.now();
-    const arr = (rlHits.get(ip) || []).filter(t => now - t < 60000);
-    arr.push(now); rlHits.set(ip, arr);
-    return arr.length > 12;
-  };
-  const looksLikeBot = req => {
-    const ua = String(req.headers['user-agent'] || '').toLowerCase();
-    return !ua || /bot|crawl|spider|slurp|preview|scan|curl|wget|python-requests|headless|facebookexternalhit|whatsapp|telegram/.test(ua);
-  };
-  const invalidate = simklType => {
-    const cid = 'sofatime-' + (simklType === 'movies' ? 'movies' : 'series');
-    delete cache[cid];
-    setImmediate(() => getCatalogCached(cid, simklType).catch(() => {}));
-  };
-  const mutationRoute = (routePath, run) => {
-    app.get(routePath, (req, res) => res.type('html').send(confirmPage));
-    app.post(routePath, async (req, res) => {
-      if (looksLikeBot(req) || req.get('X-Confirm') !== '1') return res.status(403).send('forbidden');
-      if (rateLimited(req)) return res.status(429).send('too many requests');
-      try { res.type('html').send(await run(req.params)); }
-      catch (e) { res.status(500).send(htmlPage('❌ Errore', e.message, '#f87171')); }
-    });
-  };
-
-  mutationRoute('/simkl/add/:type/:id', async ({ type, id }) => {
-    const r = await addToWatchlist(id, type);
-    if (!r.ok) return htmlPage('❌ Errore', 'Sofa Time Sync ha risposto ' + r.status, '#f87171');
-    invalidate(type); console.log('[watchlist] Aggiunto:', id);
-    return htmlPage('✅ Aggiunto!', 'Aggiunto a "Da vedere" su Sofa Time HUB.', '#4ade80');
-  });
-  mutationRoute('/simkl/remove/:type/:id', async ({ type, id }) => {
-    const r = await removeFromWatchlist(id, type);
-    if (!r.ok) return htmlPage('❌ Errore', 'Sofa Time Sync ha risposto ' + r.status, '#f87171');
-    invalidate(type); console.log('[watchlist] Rimosso:', id);
-    return htmlPage('🗑️ Rimosso!', 'Rimosso da "Da vedere" su Sofa Time HUB.', '#fb923c');
-  });
-  mutationRoute('/simkl/watched/:type/:id', async ({ type, id }) => {
-    const r = await markWatched(id, type);
-    if (!r.ok) return htmlPage('❌ Errore', 'Sofa Time Sync ha risposto ' + r.status, '#f87171');
-    invalidate(type); console.log('[watched] Segnato:', id);
-    return htmlPage('✅ Segnato come visto!', 'Sofa Time HUB aggiornato.', '#4ade80');
   });
 
   // Cache-clear protetto da token
