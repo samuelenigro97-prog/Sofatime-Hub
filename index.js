@@ -375,9 +375,9 @@ async function enrich(ids, stremioType) {
             name: localizedTitle(it, en) || (result && result.name) || '',
             poster: posterUrl(poster_path) || (result && result.poster),
             background: backdropUrl(backdrop_path) || (result && result.background),
-            description: overview || (result && result.description) || '',
+            description: (base.vote_average ? '⭐️ TMDb: ' + base.vote_average.toFixed(1) + '\n\n' : '') + (overview || (result && result.description) || ''),
             genres: ((it?.genres || en?.genres) || []).map(g => g.name),
-            imdbRating: (base.vote_average ? String(base.vote_average.toFixed(1)) : undefined) || (result && result.imdbRating),
+            imdbRating: (result && result.imdbRating) || (base.vote_average ? String(base.vote_average.toFixed(1)) : undefined),
             year: parseInt(releaseDate || '0') || (result && result.year) || undefined,
             upcoming, releaseDate: upcoming ? releaseDate : null,
             tmdbId: String(tmdbId || '')
