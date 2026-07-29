@@ -1,3 +1,6 @@
+// Carica le variabili da `.env` (se presente) prima di leggere la config.
+require('./loadEnv').loadEnv();
+
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const express = require('express');
 const fs = require('fs');
