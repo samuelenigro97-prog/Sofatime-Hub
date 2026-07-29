@@ -1,10 +1,12 @@
 node_modules/
-simkl_token.json
 
-cache_data.json
+# Segreti e dati locali (mai committare)
 .env
+simkl_token.json
+.simkl_token_raw
+cache_data.json
+sofatime_backup.json
+
+# Log e output
 nohup.out
 *.log
-.simkl_token_raw
-simkl_token.json
-sofatime_backup.json
