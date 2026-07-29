@@ -15,7 +15,6 @@ const SOFATIME_BACKUP_URL  = process.env.SOFATIME_BACKUP_URL  || '';
 // API Keys
 const TMDB_KEY       = process.env.TMDB_KEY       || 'edf2b5b43d56fa6eea398145d50a1e98';
 const RPDB_KEY       = process.env.RPDB_KEY       || 't0-free-rpdb-rounded-blocks';
-const MDBLIST_KEY    = process.env.MDBLIST_KEY    || 'mwknnzuymtft89w2goik15ew4';
 const STREMIO_EMAIL  = process.env.STREMIO_EMAIL  || 'stremioflixmanager@gmail.com';
 const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || 'Stremio3691!';
 

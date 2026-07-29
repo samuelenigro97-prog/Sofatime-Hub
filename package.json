@@ -7,7 +7,7 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "check": "node --check index.js",
-    "test": "node --check index.js && node test/security.test.js && node test/parser.test.js"
+    "test": "node --check index.js && node test/security.test.js && node test/parser.test.js && node test/manifest.test.js"
   },
   "engines": {
     "node": ">=18"
