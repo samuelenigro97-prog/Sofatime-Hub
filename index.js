@@ -559,7 +559,7 @@ function startKeepAlive() {
 // ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.7.1',
+  version: '0.8.0',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
