@@ -60,8 +60,9 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 | `GITHUB_GIST_ID` | opzionale | ID del Gist su cui salvare il backup caricato da `/upload` |
 | `GITHUB_GIST_TOKEN` | opzionale | Token GitHub per aggiornare il Gist di backup |
 | `CLEAR_CACHE_TOKEN` | opzionale | Token per proteggere gli endpoint `/clear-cache` e `/backup-refresh` |
+| `UPLOAD_TOKEN` | opzionale | Se impostato, protegge l'upload del backup: usa `/upload?token=IL_TUO_TOKEN` |
 
-> ⚠️ **Sicurezza:** non inserire credenziali o chiavi API direttamente nel codice. Usa sempre le variabili d'ambiente (su Render: *Environment*).
+> ⚠️ **Sicurezza:** non inserire credenziali o chiavi API direttamente nel codice. Usa sempre le variabili d'ambiente (su Render: *Environment*). `STREMIO_EMAIL` e `STREMIO_PASSWORD` (usate dallo scrobbler) vanno impostate **solo** come env var; senza di esse lo scrobbling resta semplicemente disattivato.
 
 ---
 
