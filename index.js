@@ -13,10 +13,13 @@ const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dir
 const SOFATIME_BACKUP_URL  = process.env.SOFATIME_BACKUP_URL  || '';
 
 // API Keys
+// Chiavi API gratuite/condivise: valori di default innocui, sovrascrivibili via env var.
 const TMDB_KEY       = process.env.TMDB_KEY       || 'edf2b5b43d56fa6eea398145d50a1e98';
 const RPDB_KEY       = process.env.RPDB_KEY       || 't0-free-rpdb-rounded-blocks';
-const STREMIO_EMAIL  = process.env.STREMIO_EMAIL  || 'stremioflixmanager@gmail.com';
-const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || 'Stremio3691!';
+// Credenziali personali dell'account Stremio per lo scrobbler: SOLO da env var, mai nel codice.
+const STREMIO_EMAIL    = process.env.STREMIO_EMAIL    || '';
+const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || '';
+const UPLOAD_TOKEN     = process.env.UPLOAD_TOKEN     || '';
 
 const PORT       = parseInt(process.env.PORT || '7780');
 const RENDER_URL = 'https://sofa-time-hub.onrender.com';
@@ -579,7 +582,10 @@ async function main() {
     await authenticatePinFlow();
   }
 
-  // Scrobbler automatico
+  // Scrobbler automatico (attivo solo se le credenziali Stremio sono nelle env var)
+  if (!STREMIO_EMAIL || !STREMIO_PASSWORD) {
+    console.warn('[scrobbler] ⚠️  STREMIO_EMAIL / STREMIO_PASSWORD non impostate: scrobbling disattivato.');
+  }
   startScrobblerLoop(STREMIO_EMAIL, STREMIO_PASSWORD, async (watchedItem) => {
     console.log('[scrobbler] 🎬 Visto su Stremio:', watchedItem.name || watchedItem._id);
     if (SIMKL_CLIENT_ID) {
@@ -665,7 +671,7 @@ b.addEventListener('click', () => {
   r.onload = async (e) => {
     b.disabled = true; b.textContent = 'Caricamento in corso...'; m.textContent = '';
     try {
-      const res = await fetch('/api/upload-backup', { method: 'POST', body: e.target.result, headers: {'Content-Type':'application/octet-stream'} });
+      const res = await fetch('/api/upload-backup' + location.search, { method: 'POST', body: e.target.result, headers: {'Content-Type':'application/octet-stream'} });
       const data = await res.json();
       if(data.ok) { m.style.color = '#4ade80'; m.textContent = '✅ Fatto! ' + data.film + ' film e ' + data.serie + ' serie aggiornati.'; b.textContent = 'Completato'; }
       else { m.style.color = '#f87171'; m.textContent = '❌ Errore: ' + (data.error||'Sconosciuto'); b.disabled = false; b.textContent = 'Riprova'; }
@@ -677,23 +683,9 @@ b.addEventListener('click', () => {
   });
 
   // API che riceve il file dall'interfaccia web e lo carica sul Gist
-  
-  app.post('/api/debug', express.raw({ limit: '10mb', type: '*/*' }), (req, res) => {
-    let zipStart = -1;
-    if (Buffer.isBuffer(req.body)) {
-      zipStart = req.body.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
-    }
-    res.json({
-      headers: req.headers,
-      isBuffer: Buffer.isBuffer(req.body),
-      bodyLength: req.body ? req.body.length : 0,
-      firstBytes: Buffer.isBuffer(req.body) && req.body.length > 0 ? req.body.slice(0, 20).toString('hex') : null,
-      zipStart: zipStart,
-      stringPart: Buffer.isBuffer(req.body) ? req.body.slice(0, 100).toString('utf8') : null
-    });
-  });
-
   app.post('/api/upload-backup', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+    // Protezione opzionale: se UPLOAD_TOKEN è impostato, richiede ?token=... corrispondente
+    if (UPLOAD_TOKEN && req.query.token !== UPLOAD_TOKEN) return res.status(403).json({ error: 'forbidden' });
     try {
       let text = '';
       let parsed = { movies: [], shows: [] };
