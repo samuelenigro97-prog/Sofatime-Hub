@@ -1,6 +1,6 @@
 # Sofatime Hub
 
-Addon Stremio/Nuvio che porta le tue watchlist di **Sofa Time (TVSofa)** nei cataloghi Stremio, con bottoni per aggiungere, rimuovere e segnare come visto.
+Addon Stremio/Nuvio che porta le tue watchlist di **Sofa Time (TVSofa)** nei cataloghi Stremio.
 
 Supporta una **Modalità Ibrida**:
 1. **Modalità Backup File (Offline / Natività 100%):** Carica direttamente un file di backup `.json` / `.sofa3bk` esportato da Sofa Time (locale o da un link URL/Gist remoto).
@@ -12,8 +12,16 @@ Supporta una **Modalità Ibrida**:
 
 - ✅ Parser universale per file di backup Sofa Time (`sofatimeParser.js`)
 - ✅ Cataloghi watchlist (film + serie) con arricchimento TMDB / Cinemeta (poster, titolo italiano, voto IMDb, anno)
-- ✅ Bottoni add / remove / segna-visto
 - ✅ Endpoint diagnostico `/sofatime-status`
+
+### Cataloghi
+
+L'addon espone quattro cataloghi, allineati ai nomi dell'app Sofa Time originale:
+
+| Catalogo | Tipi | Descrizione |
+|---|---|---|
+| **Da guardare** | Film + Serie | La tua watchlist "da vedere" importata da Sofa Time |
+| **Cosa guardare?** | Film + Serie | Selezione casuale dalla watchlist per scegliere al volo cosa vedere |
 
 ---
 
@@ -38,16 +46,32 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 |---|---|---|
 | `SOFATIME_BACKUP_PATH` | opzionale | Percorso locale del file di backup Sofa Time (default: `./sofatime_backup.json`) |
 | `SOFATIME_BACKUP_URL` | opzionale | Link URL/Gist al file di backup Sofa Time |
+| `BACKUP_REFRESH_MIN` | opzionale | Minuti tra un refresh automatico del backup da URL e il successivo (default: `30`, `0` per disabilitare) |
 | `SIMKL_CLIENT_ID` | opzionale | Client ID Simkl (per la Modalità Live Sync) |
 | `SIMKL_CLIENT_SECRET` | opzionale | Client Secret Simkl |
 | `SIMKL_ACCESS_TOKEN` | opzionale su Render | Token utente Simkl ottenuto col PIN flow |
 | `TMDB_KEY` | consigliata | Chiave TMDB per poster e titoli in italiano (fallback su Cinemeta) |
+| `RPDB_KEY` | opzionale | Chiave RatingPosterDB per i poster con badge del voto |
+| `STREMIO_EMAIL` | opzionale | Email account Stremio usato dallo scrobbler automatico |
+| `STREMIO_PASSWORD` | opzionale | Password account Stremio per lo scrobbler (usa **solo** le env var, non scriverla nel codice) |
 | `ADDON_URL` | consigliata | URL pubblico dell'addon (es. `https://sofatime-hub.onrender.com`) |
-| `TOKEN_ENC_KEY` | opzionale | Cifra il token a riposo su disco |
+| `PORT` | opzionale | Porta del server (default: `7780`) |
+| `TOKEN_ENC_KEY` | opzionale | Cifra il token Simkl a riposo su disco |
+| `GITHUB_GIST_ID` | opzionale | ID del Gist su cui salvare il backup caricato da `/upload` |
+| `GITHUB_GIST_TOKEN` | opzionale | Token GitHub per aggiornare il Gist di backup |
+| `CLEAR_CACHE_TOKEN` | opzionale | Token per proteggere gli endpoint `/clear-cache` e `/backup-refresh` |
+
+> ⚠️ **Sicurezza:** non inserire credenziali o chiavi API direttamente nel codice. Usa sempre le variabili d'ambiente (su Render: *Environment*).
 
 ---
 
 ## Comandi
 
 - `npm start` — Avvia l'addon
-- `npm test` — Esegue i test di sicurezza e il test del parser di Sofa Time
+- `npm test` — Esegue i test: sicurezza token, parser di Sofa Time e manifest/cataloghi
+
+---
+
+## Manutenzione
+
+- **Versione:** quando pubblichi una modifica, aggiorna il numero in `package.json` **e** in `manifest.version` (dentro `index.js`): devono combaciare, altrimenti Stremio/Nuvio non rileva l'aggiornamento. Un test (`test/manifest.test.js`) verifica automaticamente che siano allineati.
