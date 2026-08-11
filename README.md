@@ -59,10 +59,11 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 | `TOKEN_ENC_KEY` | opzionale | Cifra il token Simkl a riposo su disco |
 | `GITHUB_GIST_ID` | opzionale | ID del Gist su cui salvare il backup caricato da `/upload` |
 | `GITHUB_GIST_TOKEN` | opzionale | Token GitHub per aggiornare il Gist di backup |
-| `CLEAR_CACHE_TOKEN` | opzionale | Token per proteggere gli endpoint `/clear-cache` e `/backup-refresh` |
-| `UPLOAD_TOKEN` | opzionale | Se impostato, protegge l'upload del backup: usa `/upload?token=IL_TUO_TOKEN` |
+| `CLEAR_CACHE_TOKEN` | richiesto per gli endpoint amministrativi | Protegge `/clear-cache` e `/backup-refresh` |
+| `UPLOAD_TOKEN` | richiesto per l'upload | Protegge `/api/upload-backup` |
 
 > ⚠️ **Sicurezza:** non inserire credenziali o chiavi API direttamente nel codice. Usa sempre le variabili d'ambiente (su Render: *Environment*). `STREMIO_EMAIL` e `STREMIO_PASSWORD` (usate dallo scrobbler) vanno impostate **solo** come env var; senza di esse lo scrobbling resta semplicemente disattivato.
+> Per gli endpoint protetti invia il token nell'header `Authorization: Bearer ...`. I token nella query string non sono accettati perché potrebbero comparire nella cronologia e nei log.
 
 ---
 
