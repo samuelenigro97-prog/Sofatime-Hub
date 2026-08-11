@@ -5,12 +5,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// Env fittizie: index.js richiede SIMKL_CLIENT_ID all'import.
-process.env.SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || 'test-id';
-process.env.SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || 'test-secret';
+// Env fittizie: index.js richiede TRAKT_CLIENT_ID all'import.
+process.env.TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || 'test-id';
+process.env.TRAKT_CLIENT_SECRET = process.env.TRAKT_CLIENT_SECRET || 'test-secret';
 process.env.TOKEN_ENC_KEY = 'chiave-di-test-per-cifratura';
 
-const { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX } = require('../index.js');
+const { serializeToken, deserializeToken, writeFileAtomicSync, secureTokenEquals, ENC_PREFIX } = require('../index.js');
 
 let passed = 0;
 const ok = (name) => { console.log('  ok -', name); passed++; };
@@ -45,6 +45,11 @@ assert.ok(fs.existsSync(target), 'il file finale deve esistere');
 assert.strictEqual(fs.readdirSync(dir).filter(f => f.includes('.tmp')).length, 0, 'nessun file .tmp orfano');
 assert.deepStrictEqual(deserializeToken(fs.readFileSync(target, 'utf8')), sample, 'contenuto scritto non valido');
 ok('writeFileAtomicSync scrive in modo atomico');
+
+assert.strictEqual(secureTokenEquals('segreto-lungo', 'segreto-lungo'), true);
+assert.strictEqual(secureTokenEquals('segreto-lungo', 'segreto-errato'), false);
+assert.strictEqual(secureTokenEquals('', ''), false);
+ok('secureTokenEquals confronta i token senza confronto anticipato');
 fs.rmSync(dir, { recursive: true, force: true });
 
 console.log('\nTutti i test superati (' + passed + ').');
