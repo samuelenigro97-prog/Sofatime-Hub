@@ -3,10 +3,7 @@
 const assert = require('assert');
 
 // Env fittizie per coerenza con gli altri test (index.js le legge all'import).
-process.env.SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || 'test-id';
-process.env.SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || 'test-secret';
-
-const { manifest, idsFromStremioId, stremioIdFromSimkl } = require('../index.js');
+const { manifest, idsFromStremioId, stremioIdFromIds } = require('../index.js');
 const pkg = require('../package.json');
 
 console.log('Esecuzione test manifest / cataloghi...');
@@ -20,7 +17,7 @@ const ok = (name) => { console.log('  ok -', name); passed++; };
 assert.strictEqual(manifest.version, pkg.version, 'manifest.version deve combaciare con package.json');
 ok('manifest.version allineato a package.json');
 
-// 2) L'addon espone solo i cataloghi (niente stream): evita di reintrodurre i tasti Simkl.
+// 2) L'addon espone solo i cataloghi (niente stream).
 assert.deepStrictEqual(manifest.resources, ['catalog'], "le risorse devono essere solo ['catalog']");
 ok("resources contiene solo 'catalog'");
 
@@ -54,17 +51,17 @@ assert.ok(manifest.idPrefixes.includes('tt'), "idPrefixes deve includere 'tt'");
 assert.ok(manifest.idPrefixes.includes('tmdb:'), "idPrefixes deve includere 'tmdb:'");
 ok('idPrefixes corretti');
 
-// 7) Conversione ID Stremio -> Simkl.
+// 7) Conversione ID Stremio -> identificativi del backup.
 assert.deepStrictEqual(idsFromStremioId('tt1375666'), { imdb: 'tt1375666' });
 assert.deepStrictEqual(idsFromStremioId('tmdb:27205'), { tmdb: 27205 });
 assert.deepStrictEqual(idsFromStremioId('altro'), {});
 ok('idsFromStremioId converte imdb/tmdb');
 
-// 8) Conversione ID Simkl -> Stremio (imdb ha priorità, poi tmdb, altrimenti null).
-assert.strictEqual(stremioIdFromSimkl({ imdb: 'tt1375666', tmdb: 27205 }), 'tt1375666');
-assert.strictEqual(stremioIdFromSimkl({ tmdb: 27205 }), 'tmdb:27205');
-assert.strictEqual(stremioIdFromSimkl({}), null);
-assert.strictEqual(stremioIdFromSimkl(null), null);
-ok('stremioIdFromSimkl converte con priorità imdb');
+// 8) Conversione identificativi backup -> Stremio (imdb ha priorità, poi tmdb).
+assert.strictEqual(stremioIdFromIds({ imdb: 'tt1375666', tmdb: 27205 }), 'tt1375666');
+assert.strictEqual(stremioIdFromIds({ tmdb: 27205 }), 'tmdb:27205');
+assert.strictEqual(stremioIdFromIds({}), null);
+assert.strictEqual(stremioIdFromIds(null), null);
+ok('stremioIdFromIds converte con priorità imdb');
 
 console.log('\nTutti i test manifest superati (' + passed + ').');
