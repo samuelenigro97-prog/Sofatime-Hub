@@ -1,5 +1,5 @@
 /**
- * Scrobbler per Stremio -> Trakt / Sofa Time
+ * Scrobbler per Stremio -> Sofa Time Hub
  * Sincronizza automaticamente gli elementi segnati come visti su Stremio.
  */
 

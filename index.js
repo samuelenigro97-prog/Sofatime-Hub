@@ -5,11 +5,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { loadSofaTimeBackup } = require('./sofatimeParser');
 const { startScrobblerLoop } = require('./scrobbler');
+const { upsertEvent, listState } = require('./watchStore');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const TRAKT_CLIENT_ID     = process.env.TRAKT_CLIENT_ID     || '';
-const TRAKT_CLIENT_SECRET = process.env.TRAKT_CLIENT_SECRET || '';
-const TRAKT_REDIRECT_URI  = process.env.TRAKT_REDIRECT_URI  || 'urn:ietf:wg:oauth:2.0:oob';
 const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dirname, 'sofatime_backup.json');
 const SOFATIME_BACKUP_URL  = process.env.SOFATIME_BACKUP_URL  || '';
 
@@ -26,13 +24,11 @@ const SCROBBLE_TOKEN   = process.env.SCROBBLE_TOKEN   || '';
 const PORT       = parseInt(process.env.PORT || '7780');
 const RENDER_URL = 'https://sofa-time-hub.onrender.com';
 const ADDON_URL  = (process.env.ADDON_URL || (process.env.RENDER ? RENDER_URL : 'http://localhost:' + PORT)).replace(/\/$/, '');
-const TOKEN_FILE = path.join(__dirname, 'trakt_token.json');
 const WATCHED_STATE_FILE = path.join(__dirname, 'stremio_watched.json');
+const HUB_STATE_FILE = process.env.HUB_STATE_FILE || path.join(__dirname, 'data', 'watch_state.json');
 const CACHE_FILE = path.join(__dirname, 'cache_data.json');
-const TOKEN_ENC_KEY   = process.env.TOKEN_ENC_KEY   || '';
 const STREMIO_AUTHKEY = process.env.STREMIO_AUTHKEY || '';
 
-const TRAKT_API      = 'https://api.trakt.tv';
 const CACHE_TTL      = 60 * 1000;          // 1 min
 const META_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 ore
 const META_CACHE_VER = 2;
@@ -43,30 +39,6 @@ const BACKUP_REFRESH_MIN = parseInt(process.env.BACKUP_REFRESH_MIN || '30');
 const MOVIE_GENRES  = ['Azione','Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantasy','Horror','Mistero','Romantico','Fantascienza','Thriller','Guerra','Western'];
 const SERIES_GENRES = ['Azione & Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantascienza & Fantasy','Horror','Mistero','Reality','Thriller','Western'];
 
-let accessToken = process.env.TRAKT_ACCESS_TOKEN || null;
-let refreshToken = process.env.TRAKT_REFRESH_TOKEN || null;
-
-// ─── Token sicuro ─────────────────────────────────────────────────────────────
-const ENC_PREFIX = 'enc:v1:';
-function encKeyBytes() { return crypto.createHash('sha256').update(TOKEN_ENC_KEY).digest(); }
-function serializeToken(obj) {
-  const json = JSON.stringify(obj, null, 2);
-  if (!TOKEN_ENC_KEY) return json;
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', encKeyBytes(), iv);
-  const ct = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
-  return ENC_PREFIX + Buffer.concat([iv, cipher.getAuthTag(), ct]).toString('base64');
-}
-function deserializeToken(raw) {
-  if (typeof raw !== 'string') return null;
-  const s = raw.trim();
-  if (!s.startsWith(ENC_PREFIX)) return JSON.parse(s);
-  if (!TOKEN_ENC_KEY) { console.warn('[token] dato cifrato ma TOKEN_ENC_KEY assente'); return null; }
-  const buf = Buffer.from(s.slice(ENC_PREFIX.length), 'base64');
-  const dec = crypto.createDecipheriv('aes-256-gcm', encKeyBytes(), buf.subarray(0, 12));
-  dec.setAuthTag(buf.subarray(12, 28));
-  return JSON.parse(Buffer.concat([dec.update(buf.subarray(28)), dec.final()]).toString('utf8'));
-}
 function writeFileAtomicSync(file, data, opts) {
   const tmp = file + '.tmp-' + process.pid;
   fs.writeFileSync(tmp, data, opts);
@@ -78,143 +50,26 @@ function secureTokenEquals(expected, supplied) {
   const b = Buffer.from(supplied);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
-function saveToken(tok) {
-  accessToken = tok.access_token || accessToken;
-  refreshToken = tok.refresh_token || refreshToken;
-  try {
-    writeFileAtomicSync(TOKEN_FILE, serializeToken(tok), { mode: 0o600 });
-    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (e) {}
-  } catch (e) { console.warn('[token] salvataggio fallito:', e.message); }
-}
-function loadToken() {
-  if (accessToken) { console.log('[auth] token da env'); return true; }
-  try {
-    if (fs.existsSync(TOKEN_FILE)) {
-      const d = deserializeToken(fs.readFileSync(TOKEN_FILE, 'utf8'));
-      if (d && d.access_token) {
-        accessToken = d.access_token;
-        refreshToken = d.refresh_token || refreshToken;
-        console.log('[auth] token Trakt da file');
-        return true;
-      }
-    }
-  } catch (e) {}
-  return false;
-}
-
-async function refreshTraktToken() {
-  if (!refreshToken || !TRAKT_CLIENT_ID || !TRAKT_CLIENT_SECRET) return false;
-  const res = await fetch(TRAKT_API + '/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      refresh_token: refreshToken,
-      client_id: TRAKT_CLIENT_ID,
-      client_secret: TRAKT_CLIENT_SECRET,
-      redirect_uri: TRAKT_REDIRECT_URI,
-      grant_type: 'refresh_token'
-    })
-  });
-  if (!res.ok) return false;
-  saveToken(await res.json());
-  return true;
-}
-
-// ─── Auth Trakt: device flow ──────────────────────────────────────────────────
-async function authenticateDeviceFlow() {
-  if (!TRAKT_CLIENT_ID) return false;
-  const r = await fetch(TRAKT_API + '/oauth/device/code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: TRAKT_CLIENT_ID })
-  });
-  if (!r.ok) throw new Error('Trakt device code → ' + r.status);
-  const j = await r.json();
-  console.log('\n════════════════════════════════════════');
-  console.log(' Autorizza Sofa Time HUB (Trakt Sync):');
-  console.log(' 1) Vai su: ' + (j.verification_url || 'https://trakt.tv/activate'));
-  console.log(' 2) Inserisci il codice: ' + j.user_code);
-  console.log('════════════════════════════════════════\n');
-  const deviceCode = j.device_code;
-  const interval = (j.interval || 5) * 1000;
-  const deadline = Date.now() + (j.expires_in || 900) * 1000;
-  while (Date.now() < deadline) {
-    await new Promise(res => setTimeout(res, interval));
-    try {
-      const tokenRes = await fetch(TRAKT_API + '/oauth/device/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: deviceCode, client_id: TRAKT_CLIENT_ID, client_secret: TRAKT_CLIENT_SECRET })
-      });
-      if (tokenRes.ok) {
-        const tok = await tokenRes.json();
-        if (tok.access_token) { saveToken(tok); console.log('[auth] ✅ Trakt autorizzato'); return true; }
-      }
-      if (![400, 404, 409, 410, 418, 429].includes(tokenRes.status)) {
-        throw new Error('Trakt device token → ' + tokenRes.status);
-      }
-    } catch (e) {}
-  }
-  throw new Error('Autorizzazione Trakt scaduta.');
-}
-
-// ─── Trakt HTTP ───────────────────────────────────────────────────────────────
-function traktHeaders() {
-  const h = { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': TRAKT_CLIENT_ID };
-  if (accessToken) h['Authorization'] = 'Bearer ' + accessToken;
-  return h;
-}
-async function traktGet(pathUrl) {
-  if (!TRAKT_CLIENT_ID) return null;
-  let res = await fetch(TRAKT_API + pathUrl, { headers: traktHeaders() });
-  if (res.status === 401 && await refreshTraktToken()) {
-    res = await fetch(TRAKT_API + pathUrl, { headers: traktHeaders() });
-  }
-  if (res.status === 204) return null;
-  if (!res.ok) throw new Error('Trakt GET ' + pathUrl + ' → ' + res.status);
-  return res.json();
-}
-async function traktPost(pathUrl, body) {
-  if (!TRAKT_CLIENT_ID) return { ok: false, status: 400, json: { message: 'TRAKT_CLIENT_ID non impostato' } };
-  let res = await fetch(TRAKT_API + pathUrl, { method: 'POST', headers: traktHeaders(), body: JSON.stringify(body) });
-  if (res.status === 401 && await refreshTraktToken()) {
-    res = await fetch(TRAKT_API + pathUrl, { method: 'POST', headers: traktHeaders(), body: JSON.stringify(body) });
-  }
-  return { ok: res.ok, status: res.status, json: await res.json().catch(() => ({})) };
-}
-
-async function getTraktWatchlist(traktType) {
-  const all = [];
-  const limit = 100;
-  for (let page = 1; page <= 100; page++) {
-    const batch = await traktGet(`/sync/watchlist/${traktType}?extended=full&limit=${limit}&page=${page}`);
-    if (!Array.isArray(batch) || !batch.length) break;
-    all.push(...batch);
-    if (batch.length < limit) break;
-  }
-  return all;
-}
-
 function idsFromStremioId(stremioId) {
   if (typeof stremioId !== 'string') return {};
-  if (stremioId.startsWith('tt'))    return { imdb: stremioId };
+  if (stremioId.startsWith('tt'))    return { imdb: stremioId.split(':')[0] };
   if (stremioId.startsWith('tmdb:')) return { tmdb: parseInt(stremioId.slice(5)) };
   return {};
 }
-function stremioIdFromTrakt(ids) {
+function stremioIdFromIds(ids) {
   if (!ids) return null;
   if (ids.imdb) return ids.imdb;
   if (ids.tmdb) return 'tmdb:' + ids.tmdb;
   return null;
 }
 
-// Watchlist "plan to watch" da cache backup (se disponibile) o Sofa Time backup URL/file o Trakt API
+// Watchlist "plan to watch" dal backup Sofa Time.
 async function getPlanToWatch(mediaType) {
   // 0. Usa la cache in memoria del backup (aggiornata dal poller automatico)
   if (cachedBackupData) {
     const items = mediaType === 'movies' ? cachedBackupData.movies : cachedBackupData.shows;
     if (items && items.length > 0) {
-      return items.filter(x => stremioIdFromTrakt(x.ids));
+      return items.filter(x => stremioIdFromIds(x.ids));
     }
   }
 
@@ -226,31 +81,12 @@ async function getPlanToWatch(mediaType) {
       const items = mediaType === 'movies' ? sofaData.movies : sofaData.shows;
       if (items && items.length > 0) {
         console.log(`[sofatime] Trovati ${items.length} elementi in backup per ${mediaType}`);
-        return items.filter(x => stremioIdFromTrakt(x.ids));
+        return items.filter(x => stremioIdFromIds(x.ids));
       }
     }
   }
 
-  // 2. Fallback: watchlist Trakt (se configurata)
-  if (TRAKT_CLIENT_ID && accessToken) {
-    const traktType = mediaType === 'movies' ? 'movies' : 'shows';
-    const data = await getTraktWatchlist(traktType);
-    if (!data) return [];
-    return data.map(entry => {
-      const o = entry.movie || entry.show || {};
-      return { ids: o.ids || {}, title: o.title, year: o.year };
-    }).filter(x => stremioIdFromTrakt(x.ids));
-  }
   return [];
-}
-
-async function markWatched(stremioId, mediaType) {
-  const key = mediaType === 'movies' ? 'movies' : 'shows';
-  const ids = idsFromStremioId(stremioId);
-  if (!Object.keys(ids).length) throw new Error('ID Stremio non supportato: ' + stremioId);
-  const result = await traktPost('/sync/history', { [key]: [{ ids, watched_at: new Date().toISOString() }] });
-  if (!result.ok) throw new Error('Trakt history → ' + result.status);
-  return result;
 }
 
 // ─── Auto-refresh backup da URL (GitHub Gist o link diretto) ─────────────────
@@ -341,7 +177,7 @@ function loadCacheFromDisk() {
   } catch (e) { console.warn('[cache-disk] errore:', e.message); }
 }
 
-// ─── TMDB helpers (come Trakt Hub) ───────────────────────────────────────────
+// ─── TMDB helpers ────────────────────────────────────────────────────────────
 const POSTER_SIZE   = 'original';
 const BACKDROP_SIZE = 'original';
 
@@ -472,7 +308,7 @@ async function enrich(ids, stremioType) {
   return result;
 }
 
-// ─── Prefetch meta in background (come Trakt Hub) ────────────────────────────
+// ─── Prefetch meta in background ─────────────────────────────────────────────
 function prefetchMeta(metas, stremioType) {
   const toFetch = metas.filter(m => {
     const key = stremioType + ':' + m.id;
@@ -508,7 +344,7 @@ async function buildCatalog(mediaType) {
   const releasedList = [];
 
   const batch = items.map(it => {
-    const id = stremioIdFromTrakt(it.ids);
+    const id = stremioIdFromIds(it.ids);
     const key = stremioType + ':' + id;
     const e = metaCache[key]?.meta || null;
     
@@ -596,7 +432,7 @@ async function getCatalogCached(catalogId, mediaType, genre) {
 
   if (!stale) return entry.metas;
 
-  // Stale-while-revalidate (come Trakt Hub)
+  // Stale-while-revalidate
   if (entry) {
     entry.ts = Date.now();
     (async () => {
@@ -632,7 +468,7 @@ function startKeepAlive() {
 // ─── Manifest con 4 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.9.0',
+  version: '0.10.0',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
@@ -650,22 +486,24 @@ const manifest = {
 
 async function main() {
   loadCacheFromDisk();
-  if (TRAKT_CLIENT_ID && !loadToken()) {
-    if (process.env.RENDER) throw new Error('Token mancante: imposta TRAKT_ACCESS_TOKEN nelle env var di Render.');
-    await authenticateDeviceFlow();
-  }
 
-  // Scrobbler automatico: parte solo quando entrambe le estremità sono pronte.
+  // Importa automaticamente gli elementi visti da Stremio nello stato centrale del Hub.
   const stremioConfigured = !!STREMIO_AUTHKEY || !!(STREMIO_EMAIL && STREMIO_PASSWORD);
-  const traktConfigured = !!TRAKT_CLIENT_ID && !!accessToken;
   if (!stremioConfigured) {
     console.warn('[scrobbler] ⚠️  STREMIO_AUTHKEY o credenziali Stremio mancanti: scrobbling disattivato.');
-  } else if (!traktConfigured) {
-    console.warn('[scrobbler] ⚠️  Trakt non configurato: cronologia Stremio non ancora elaborata.');
   } else {
     startScrobblerLoop(STREMIO_EMAIL, STREMIO_PASSWORD, async (watchedItem) => {
       console.log('[scrobbler] 🎬 Visto su Stremio:', watchedItem.name || watchedItem._id);
-      await markWatched(watchedItem._id, watchedItem.type === 'movie' ? 'movies' : 'shows');
+      const ids = idsFromStremioId(watchedItem._id);
+      if (!Object.keys(ids).length) throw new Error('ID Stremio non supportato: ' + watchedItem._id);
+      upsertEvent(HUB_STATE_FILE, {
+        action: 'watched',
+        progress: 100,
+        [watchedItem.type === 'movie' ? 'movie' : 'show']: {
+          ids,
+          title: watchedItem.name || ''
+        }
+      }, 'stremio');
     }, { authKey: STREMIO_AUTHKEY, stateFile: WATCHED_STATE_FILE });
   }
 
@@ -698,8 +536,9 @@ async function main() {
     version: manifest.version,
     cataloghi: manifest.catalogs.map(c => c.id),
     backupConfigurato: !!(SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)),
-    traktSyncConfigurato: traktConfigured,
-    scrobblerStremioAttivo: stremioConfigured && traktConfigured,
+    archivioHubAttivo: true,
+    elementiSincronizzati: listState(HUB_STATE_FILE).length,
+    scrobblerStremioAttivo: stremioConfigured,
     ingressoNuvioAttivo: !!SCROBBLE_TOKEN,
     keepAlive: !!process.env.RENDER,
     cataloghiInCache: Object.keys(cache).map(k => k + ':' + (cache[k]?.metas?.length || 0) + ' item')
@@ -725,24 +564,26 @@ async function main() {
     res.json({ ok: true, film: backupStatus.moviesCount, serie: backupStatus.showsCount, errore: backupStatus.lastError });
   });
 
-  // Ponte Nuvio -> Hub -> Trakt. Accetta solo payload scrobble minimi e richiede sempre un token.
+  // Nuvio -> Hub: salva avanzamento e stato visto nell'archivio centrale.
   app.post('/api/scrobble', express.json({ limit: '64kb' }), async (req, res) => {
     if (!SCROBBLE_TOKEN) return res.status(503).json({ error: 'SCROBBLE_TOKEN non configurato' });
     const supplied = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token;
     if (!secureTokenEquals(SCROBBLE_TOKEN, supplied)) return res.status(403).json({ error: 'forbidden' });
-    const action = String(req.body?.action || '').toLowerCase();
-    const progress = Number(req.body?.progress);
-    const media = req.body?.movie ? { movie: req.body.movie } : req.body?.episode ? { episode: req.body.episode } : null;
-    if (!['start', 'pause', 'stop'].includes(action)) return res.status(400).json({ error: 'action non valida' });
-    if (!Number.isFinite(progress) || progress < 0 || progress > 100) return res.status(400).json({ error: 'progress non valido' });
-    if (!media) return res.status(400).json({ error: 'movie o episode obbligatorio' });
     try {
-      const result = await traktPost('/scrobble/' + action, { ...media, progress });
-      if (!result.ok) return res.status(result.status).json({ error: 'Trakt ha rifiutato lo scrobble', details: result.json });
-      res.json({ ok: true, trakt: result.json });
+      const item = upsertEvent(HUB_STATE_FILE, req.body || {}, 'nuvio');
+      res.json({ ok: true, item });
     } catch (e) {
-      res.status(502).json({ error: e.message });
+      res.status(400).json({ error: e.message });
     }
+  });
+
+  // Hub -> Nuvio: lettura completa o incrementale con ?since=<ISO-8601>.
+  app.get('/api/sync', (req, res) => {
+    if (!SCROBBLE_TOKEN) return res.status(503).json({ error: 'SCROBBLE_TOKEN non configurato' });
+    const supplied = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token;
+    if (!secureTokenEquals(SCROBBLE_TOKEN, supplied)) return res.status(403).json({ error: 'forbidden' });
+    if (req.query.since && !Number.isFinite(Date.parse(req.query.since))) return res.status(400).json({ error: 'since non valido' });
+    res.json({ ok: true, items: listState(HUB_STATE_FILE, req.query.since), serverTime: new Date().toISOString() });
   });
 
   // Interfaccia Web per caricare il backup comodamente dall'iPhone (elimina la necessità dello Shortcut)
@@ -868,4 +709,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, secureTokenEquals, ENC_PREFIX, idsFromStremioId, stremioIdFromTrakt, manifest };
+module.exports = { writeFileAtomicSync, secureTokenEquals, idsFromStremioId, stremioIdFromIds, manifest };
