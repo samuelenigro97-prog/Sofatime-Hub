@@ -5,10 +5,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { loadSofaTimeBackup } = require('./sofatimeParser');
 const { startScrobblerLoop } = require('./scrobbler');
+const { upsertEvent, listState } = require('./watchStore');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const SIMKL_CLIENT_ID     = process.env.SIMKL_CLIENT_ID     || '';
-const SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || '';
 const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dirname, 'sofatime_backup.json');
 const SOFATIME_BACKUP_URL  = process.env.SOFATIME_BACKUP_URL  || '';
 
@@ -20,16 +19,16 @@ const RPDB_KEY       = process.env.RPDB_KEY       || 't0-free-rpdb-rounded-block
 const STREMIO_EMAIL    = process.env.STREMIO_EMAIL    || '';
 const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || '';
 const UPLOAD_TOKEN     = process.env.UPLOAD_TOKEN     || '';
+const SCROBBLE_TOKEN   = process.env.SCROBBLE_TOKEN   || '';
 
 const PORT       = parseInt(process.env.PORT || '7780');
 const RENDER_URL = 'https://sofa-time-hub.onrender.com';
 const ADDON_URL  = (process.env.ADDON_URL || (process.env.RENDER ? RENDER_URL : 'http://localhost:' + PORT)).replace(/\/$/, '');
-const TOKEN_FILE = path.join(__dirname, 'simkl_token.json');
+const WATCHED_STATE_FILE = path.join(__dirname, 'stremio_watched.json');
+const HUB_STATE_FILE = process.env.HUB_STATE_FILE || path.join(__dirname, 'data', 'watch_state.json');
 const CACHE_FILE = path.join(__dirname, 'cache_data.json');
-const TOKEN_ENC_KEY   = process.env.TOKEN_ENC_KEY   || '';
 const STREMIO_AUTHKEY = process.env.STREMIO_AUTHKEY || '';
 
-const SIMKL_API      = 'https://api.simkl.com';
 const CACHE_TTL      = 60 * 1000;          // 1 min
 const META_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 ore
 const META_CACHE_VER = 2;
@@ -40,113 +39,37 @@ const BACKUP_REFRESH_MIN = parseInt(process.env.BACKUP_REFRESH_MIN || '30');
 const MOVIE_GENRES  = ['Azione','Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantasy','Horror','Mistero','Romantico','Fantascienza','Thriller','Guerra','Western'];
 const SERIES_GENRES = ['Azione & Avventura','Animazione','Commedia','Crime','Documentario','Dramma','Fantascienza & Fantasy','Horror','Mistero','Reality','Thriller','Western'];
 
-let accessToken = process.env.SIMKL_ACCESS_TOKEN || null;
-
-// ─── Token sicuro ─────────────────────────────────────────────────────────────
-const ENC_PREFIX = 'enc:v1:';
-function encKeyBytes() { return crypto.createHash('sha256').update(TOKEN_ENC_KEY).digest(); }
-function serializeToken(obj) {
-  const json = JSON.stringify(obj, null, 2);
-  if (!TOKEN_ENC_KEY) return json;
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', encKeyBytes(), iv);
-  const ct = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
-  return ENC_PREFIX + Buffer.concat([iv, cipher.getAuthTag(), ct]).toString('base64');
-}
-function deserializeToken(raw) {
-  if (typeof raw !== 'string') return null;
-  const s = raw.trim();
-  if (!s.startsWith(ENC_PREFIX)) return JSON.parse(s);
-  if (!TOKEN_ENC_KEY) { console.warn('[token] dato cifrato ma TOKEN_ENC_KEY assente'); return null; }
-  const buf = Buffer.from(s.slice(ENC_PREFIX.length), 'base64');
-  const dec = crypto.createDecipheriv('aes-256-gcm', encKeyBytes(), buf.subarray(0, 12));
-  dec.setAuthTag(buf.subarray(12, 28));
-  return JSON.parse(Buffer.concat([dec.update(buf.subarray(28)), dec.final()]).toString('utf8'));
-}
 function writeFileAtomicSync(file, data, opts) {
   const tmp = file + '.tmp-' + process.pid;
   fs.writeFileSync(tmp, data, opts);
   fs.renameSync(tmp, file);
 }
-function saveToken(tok) {
-  accessToken = tok.access_token || accessToken;
-  try {
-    writeFileAtomicSync(TOKEN_FILE, serializeToken(tok), { mode: 0o600 });
-    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (e) {}
-  } catch (e) { console.warn('[token] salvataggio fallito:', e.message); }
+function secureTokenEquals(expected, supplied) {
+  if (!expected || typeof supplied !== 'string') return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(supplied);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
-function loadToken() {
-  if (accessToken) { console.log('[auth] token da env'); return true; }
-  try {
-    if (fs.existsSync(TOKEN_FILE)) {
-      const d = deserializeToken(fs.readFileSync(TOKEN_FILE, 'utf8'));
-      if (d && d.access_token) { accessToken = d.access_token; console.log('[auth] token da file'); return true; }
-    }
-  } catch (e) {}
-  return false;
-}
-
-// ─── Auth Simkl: PIN flow ─────────────────────────────────────────────────────
-async function authenticatePinFlow() {
-  if (!SIMKL_CLIENT_ID) return false;
-  const r = await fetch(SIMKL_API + '/oauth/pin?client_id=' + SIMKL_CLIENT_ID);
-  const j = await r.json();
-  console.log('\n════════════════════════════════════════');
-  console.log(' Autorizza Sofa Time HUB (Simkl Sync):');
-  console.log(' 1) Vai su: ' + (j.verification_url || 'https://simkl.com/pin'));
-  console.log(' 2) Inserisci il codice: ' + j.user_code);
-  console.log('════════════════════════════════════════\n');
-  const userCode = j.user_code;
-  const interval = (j.interval || 5) * 1000;
-  const deadline = Date.now() + (j.expires_in || 900) * 1000;
-  while (Date.now() < deadline) {
-    await new Promise(res => setTimeout(res, interval));
-    try {
-      const pj = await (await fetch(SIMKL_API + '/oauth/pin/' + userCode + '?client_id=' + SIMKL_CLIENT_ID)).json();
-      if (pj.result === 'OK' && pj.access_token) { saveToken({ access_token: pj.access_token }); console.log('[auth] ✅ autorizzato'); return true; }
-    } catch (e) {}
-  }
-  throw new Error('Autorizzazione Simkl scaduta.');
-}
-
-// ─── Simkl HTTP ───────────────────────────────────────────────────────────────
-function simklHeaders() {
-  const h = { 'Content-Type': 'application/json', 'simkl-api-key': SIMKL_CLIENT_ID };
-  if (accessToken) h['Authorization'] = 'Bearer ' + accessToken;
-  return h;
-}
-async function simklGet(pathUrl) {
-  if (!SIMKL_CLIENT_ID) return null;
-  const res = await fetch(SIMKL_API + pathUrl, { headers: simklHeaders() });
-  if (res.status === 204) return null;
-  if (!res.ok) throw new Error('Simkl GET ' + pathUrl + ' → ' + res.status);
-  return res.json();
-}
-async function simklPost(pathUrl, body) {
-  if (!SIMKL_CLIENT_ID) return { ok: false, status: 400, json: { message: 'SIMKL_CLIENT_ID non impostato' } };
-  const res = await fetch(SIMKL_API + pathUrl, { method: 'POST', headers: simklHeaders(), body: JSON.stringify(body) });
-  return { ok: res.ok, status: res.status, json: await res.json().catch(() => ({})) };
-}
-
 function idsFromStremioId(stremioId) {
-  if (stremioId.startsWith('tt'))    return { imdb: stremioId };
+  if (typeof stremioId !== 'string') return {};
+  if (stremioId.startsWith('tt'))    return { imdb: stremioId.split(':')[0] };
   if (stremioId.startsWith('tmdb:')) return { tmdb: parseInt(stremioId.slice(5)) };
   return {};
 }
-function stremioIdFromSimkl(ids) {
+function stremioIdFromIds(ids) {
   if (!ids) return null;
   if (ids.imdb) return ids.imdb;
   if (ids.tmdb) return 'tmdb:' + ids.tmdb;
   return null;
 }
 
-// Watchlist "plan to watch" da cache backup (se disponibile) o Sofa Time backup URL/file o Simkl API
-async function getPlanToWatch(simklType) {
+// Watchlist "plan to watch" dal backup Sofa Time.
+async function getPlanToWatch(mediaType) {
   // 0. Usa la cache in memoria del backup (aggiornata dal poller automatico)
   if (cachedBackupData) {
-    const items = simklType === 'movies' ? cachedBackupData.movies : cachedBackupData.shows;
+    const items = mediaType === 'movies' ? cachedBackupData.movies : cachedBackupData.shows;
     if (items && items.length > 0) {
-      return items.filter(x => stremioIdFromSimkl(x.ids));
+      return items.filter(x => stremioIdFromIds(x.ids));
     }
   }
 
@@ -155,29 +78,15 @@ async function getPlanToWatch(simklType) {
   if (SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)) {
     const sofaData = await loadSofaTimeBackup(backupSource);
     if (sofaData) {
-      const items = simklType === 'movies' ? sofaData.movies : sofaData.shows;
+      const items = mediaType === 'movies' ? sofaData.movies : sofaData.shows;
       if (items && items.length > 0) {
-        console.log(`[sofatime] Trovati ${items.length} elementi in backup per ${simklType}`);
-        return items.filter(x => stremioIdFromSimkl(x.ids));
+        console.log(`[sofatime] Trovati ${items.length} elementi in backup per ${mediaType}`);
+        return items.filter(x => stremioIdFromIds(x.ids));
       }
     }
   }
 
-  // 2. Fallback: API Simkl sync (se configurata)
-  if (SIMKL_CLIENT_ID) {
-    const data = await simklGet('/sync/all-items/' + simklType + '/plantowatch?extended=full');
-    if (!data) return [];
-    return (data[simklType] || []).map(entry => {
-      const o = entry.movie || entry.show || {};
-      return { ids: o.ids || {}, title: o.title, year: o.year };
-    }).filter(x => stremioIdFromSimkl(x.ids));
-  }
   return [];
-}
-
-async function markWatched(stremioId, simklType) {
-  const key = simklType === 'movies' ? 'movies' : 'shows';
-  return simklPost('/sync/history', { [key]: [{ ids: idsFromStremioId(stremioId), watched_at: new Date().toISOString() }] });
 }
 
 // ─── Auto-refresh backup da URL (GitHub Gist o link diretto) ─────────────────
@@ -268,7 +177,7 @@ function loadCacheFromDisk() {
   } catch (e) { console.warn('[cache-disk] errore:', e.message); }
 }
 
-// ─── TMDB helpers (come Trakt Hub) ───────────────────────────────────────────
+// ─── TMDB helpers ────────────────────────────────────────────────────────────
 const POSTER_SIZE   = 'original';
 const BACKDROP_SIZE = 'original';
 
@@ -399,7 +308,7 @@ async function enrich(ids, stremioType) {
   return result;
 }
 
-// ─── Prefetch meta in background (come Trakt Hub) ────────────────────────────
+// ─── Prefetch meta in background ─────────────────────────────────────────────
 function prefetchMeta(metas, stremioType) {
   const toFetch = metas.filter(m => {
     const key = stremioType + ':' + m.id;
@@ -428,14 +337,14 @@ function prefetchMeta(metas, stremioType) {
 }
 
 // ─── Catalog builder ──────────────────────────────────────────────────────────
-async function buildCatalog(simklType) {
-  const stremioType = simklType === 'movies' ? 'movie' : 'series';
-  const items = await getPlanToWatch(simklType);
+async function buildCatalog(mediaType) {
+  const stremioType = mediaType === 'movies' ? 'movie' : 'series';
+  const items = await getPlanToWatch(mediaType);
   const upcomingList = [];
   const releasedList = [];
 
   const batch = items.map(it => {
-    const id = stremioIdFromSimkl(it.ids);
+    const id = stremioIdFromIds(it.ids);
     const key = stremioType + ':' + id;
     const e = metaCache[key]?.meta || null;
     
@@ -491,8 +400,8 @@ async function buildRandom(stremioType, genre) {
   return [...source].sort(() => Math.random() - 0.5).slice(0, 100);
 }
 
-async function getCatalogCached(catalogId, simklType, genre) {
-  const stremioType = simklType === 'movies' ? 'movie' : 'series';
+async function getCatalogCached(catalogId, mediaType, genre) {
+  const stremioType = mediaType === 'movies' ? 'movie' : 'series';
   const isRandom    = catalogId.includes('random');
   const isUpcoming  = catalogId.includes('upcoming');
 
@@ -514,7 +423,7 @@ async function getCatalogCached(catalogId, simklType, genre) {
       return cache[catalogId].metas;
     }
     // Triggera build del catalogo principale che popola anche upcoming
-    await getCatalogCached(catalogId.replace('-upcoming', '').replace('-series', '-shows').replace('-movies', '-movies'), simklType);
+    await getCatalogCached(catalogId.replace('-upcoming', '').replace('-series', '-shows').replace('-movies', '-movies'), mediaType);
     return cache[catalogId]?.metas || [];
   }
 
@@ -523,12 +432,12 @@ async function getCatalogCached(catalogId, simklType, genre) {
 
   if (!stale) return entry.metas;
 
-  // Stale-while-revalidate (come Trakt Hub)
+  // Stale-while-revalidate
   if (entry) {
     entry.ts = Date.now();
     (async () => {
       try {
-        const metas = await buildCatalog(simklType);
+        const metas = await buildCatalog(mediaType);
         cache[catalogId] = { metas, ts: Date.now() };
         prefetchMeta(metas, stremioType);
         saveCacheToDisk();
@@ -540,7 +449,7 @@ async function getCatalogCached(catalogId, simklType, genre) {
 
   // Prima build
   console.log('[cache miss] ' + catalogId + ' — aggiorno...');
-  const metas = await buildCatalog(simklType);
+  const metas = await buildCatalog(mediaType);
   cache[catalogId] = { metas, ts: Date.now() };
   prefetchMeta(metas, stremioType);
   saveCacheToDisk();
@@ -556,10 +465,10 @@ function startKeepAlive() {
   }, 14 * 60 * 1000).unref();
 }
 
-// ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
+// ─── Manifest con 4 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.8.0',
+  version: '0.10.0',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
@@ -577,21 +486,26 @@ const manifest = {
 
 async function main() {
   loadCacheFromDisk();
-  if (SIMKL_CLIENT_ID && !loadToken()) {
-    if (process.env.RENDER) throw new Error('Token mancante: imposta SIMKL_ACCESS_TOKEN nelle env var di Render.');
-    await authenticatePinFlow();
-  }
 
-  // Scrobbler automatico (attivo solo se le credenziali Stremio sono nelle env var)
-  if (!STREMIO_EMAIL || !STREMIO_PASSWORD) {
-    console.warn('[scrobbler] ⚠️  STREMIO_EMAIL / STREMIO_PASSWORD non impostate: scrobbling disattivato.');
+  // Importa automaticamente gli elementi visti da Stremio nello stato centrale del Hub.
+  const stremioConfigured = !!STREMIO_AUTHKEY || !!(STREMIO_EMAIL && STREMIO_PASSWORD);
+  if (!stremioConfigured) {
+    console.warn('[scrobbler] ⚠️  STREMIO_AUTHKEY o credenziali Stremio mancanti: scrobbling disattivato.');
+  } else {
+    startScrobblerLoop(STREMIO_EMAIL, STREMIO_PASSWORD, async (watchedItem) => {
+      console.log('[scrobbler] 🎬 Visto su Stremio:', watchedItem.name || watchedItem._id);
+      const ids = idsFromStremioId(watchedItem._id);
+      if (!Object.keys(ids).length) throw new Error('ID Stremio non supportato: ' + watchedItem._id);
+      upsertEvent(HUB_STATE_FILE, {
+        action: 'watched',
+        progress: 100,
+        [watchedItem.type === 'movie' ? 'movie' : 'show']: {
+          ids,
+          title: watchedItem.name || ''
+        }
+      }, 'stremio');
+    }, { authKey: STREMIO_AUTHKEY, stateFile: WATCHED_STATE_FILE });
   }
-  startScrobblerLoop(STREMIO_EMAIL, STREMIO_PASSWORD, async (watchedItem) => {
-    console.log('[scrobbler] 🎬 Visto su Stremio:', watchedItem.name || watchedItem._id);
-    if (SIMKL_CLIENT_ID) {
-      await markWatched(watchedItem._id, watchedItem.type === 'movie' ? 'movies' : 'shows');
-    }
-  });
 
   startKeepAlive();
   startBackupPoller(); // Auto-ricarica il backup dal Gist/URL ogni BACKUP_REFRESH_MIN minuti
@@ -600,10 +514,10 @@ async function main() {
 
   builder.defineCatalogHandler(async ({ type, id, extra }) => {
     try {
-      const simklType = type === 'movie' ? 'movies' : 'shows';
+      const mediaType = type === 'movie' ? 'movies' : 'shows';
       const skip  = parseInt((extra && extra.skip)  || 0);
       const genre = (extra && extra.genre) || null;
-      const all   = await getCatalogCached(id, simklType, genre);
+      const all   = await getCatalogCached(id, mediaType, genre);
       let filtered = genre
         ? all.filter(m => m.genres && m.genres.includes(genre))
         : all;
@@ -622,8 +536,10 @@ async function main() {
     version: manifest.version,
     cataloghi: manifest.catalogs.map(c => c.id),
     backupConfigurato: !!(SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)),
-    simklSyncConfigurato: !!SIMKL_CLIENT_ID && !!accessToken,
-    scrobblerAttivo: true,
+    archivioHubAttivo: true,
+    elementiSincronizzati: listState(HUB_STATE_FILE).length,
+    scrobblerStremioAttivo: stremioConfigured,
+    ingressoNuvioAttivo: !!SCROBBLE_TOKEN,
     keepAlive: !!process.env.RENDER,
     cataloghiInCache: Object.keys(cache).map(k => k + ':' + (cache[k]?.metas?.length || 0) + ' item')
   }));
@@ -646,6 +562,28 @@ async function main() {
     if (token && req.query.token !== token) return res.status(403).json({ error: 'forbidden' });
     await fetchAndCacheBackup(true);
     res.json({ ok: true, film: backupStatus.moviesCount, serie: backupStatus.showsCount, errore: backupStatus.lastError });
+  });
+
+  // Nuvio -> Hub: salva avanzamento e stato visto nell'archivio centrale.
+  app.post('/api/scrobble', express.json({ limit: '64kb' }), async (req, res) => {
+    if (!SCROBBLE_TOKEN) return res.status(503).json({ error: 'SCROBBLE_TOKEN non configurato' });
+    const supplied = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token;
+    if (!secureTokenEquals(SCROBBLE_TOKEN, supplied)) return res.status(403).json({ error: 'forbidden' });
+    try {
+      const item = upsertEvent(HUB_STATE_FILE, req.body || {}, 'nuvio');
+      res.json({ ok: true, item });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Hub -> Nuvio: lettura completa o incrementale con ?since=<ISO-8601>.
+  app.get('/api/sync', (req, res) => {
+    if (!SCROBBLE_TOKEN) return res.status(503).json({ error: 'SCROBBLE_TOKEN non configurato' });
+    const supplied = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token;
+    if (!secureTokenEquals(SCROBBLE_TOKEN, supplied)) return res.status(403).json({ error: 'forbidden' });
+    if (req.query.since && !Number.isFinite(Date.parse(req.query.since))) return res.status(400).json({ error: 'since non valido' });
+    res.json({ ok: true, items: listState(HUB_STATE_FILE, req.query.since), serverTime: new Date().toISOString() });
   });
 
   // Interfaccia Web per caricare il backup comodamente dall'iPhone (elimina la necessità dello Shortcut)
@@ -771,4 +709,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, manifest };
+module.exports = { writeFileAtomicSync, secureTokenEquals, idsFromStremioId, stremioIdFromIds, manifest };

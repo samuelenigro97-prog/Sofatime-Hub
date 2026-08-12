@@ -2,10 +2,10 @@ node_modules/
 
 # Segreti e dati locali (mai committare)
 .env
-simkl_token.json
-.simkl_token_raw
+stremio_watched.json
 cache_data.json
 sofatime_backup.json
+data/
 
 # Log e output
 nohup.out

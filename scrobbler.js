@@ -1,9 +1,10 @@
 /**
- * Scrobbler per Stremio -> Simkl / Sofa Time
+ * Scrobbler per Stremio -> Sofa Time Hub
  * Sincronizza automaticamente gli elementi segnati come visti su Stremio.
  */
 
 const STREMIO_API = 'https://api.strem.io/api';
+const fs = require('fs');
 let cachedAuthKey = process.env.STREMIO_AUTHKEY || null;
 
 async function getStremioAuthKey(email, password) {
@@ -46,9 +47,27 @@ async function fetchStremioWatchedItems(authKey) {
   return [];
 }
 
-async function startScrobblerLoop(email, password, onNewWatchedItem) {
+function loadKnownWatched(stateFile) {
+  if (!stateFile) return new Set();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function saveKnownWatched(stateFile, knownWatched) {
+  if (!stateFile) return;
+  const tmp = stateFile + '.tmp-' + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify([...knownWatched].sort()), { mode: 0o600 });
+  fs.renameSync(tmp, stateFile);
+}
+
+async function startScrobblerLoop(email, password, onNewWatchedItem, options = {}) {
   console.log('[scrobbler] Avvio loop di scrobbling automatico...');
-  const knownWatched = new Set();
+  if (options.authKey) cachedAuthKey = options.authKey;
+  const knownWatched = loadKnownWatched(options.stateFile);
   
   const check = async () => {
     const authKey = await getStremioAuthKey(email, password);
@@ -58,23 +77,28 @@ async function startScrobblerLoop(email, password, onNewWatchedItem) {
     for (const item of items) {
       const id = item._id;
       if (id && !knownWatched.has(id)) {
-        knownWatched.add(id);
         if (onNewWatchedItem) {
           try {
             await onNewWatchedItem(item);
-          } catch (e) {}
+            knownWatched.add(id);
+            saveKnownWatched(options.stateFile, knownWatched);
+          } catch (e) {
+            console.warn('[scrobbler] Invio fallito, ritenterò:', e.message);
+          }
         }
       }
     }
   };
 
   // Controlla ogni 2 minuti
-  setInterval(check, 2 * 60 * 1000);
-  setTimeout(check, 5000);
+  setInterval(check, options.intervalMs || 2 * 60 * 1000).unref();
+  setTimeout(check, options.initialDelayMs || 5000).unref();
 }
 
 module.exports = {
   getStremioAuthKey,
   fetchStremioWatchedItems,
+  loadKnownWatched,
+  saveKnownWatched,
   startScrobblerLoop
 };
