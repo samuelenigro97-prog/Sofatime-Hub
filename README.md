@@ -40,6 +40,39 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 
 ---
 
+## Extra: Sync Automatica Iscrizioni YouTube tra Due Account
+
+Oltre all'addon Stremio, il repo include un **demone separato e indipendente** (`youtube-sync/`) che
+tiene sincronizzate in automatico le iscrizioni YouTube tra due account Google: quando ti iscrivi a
+un canale su uno dei due, entro pochi minuti viene iscritto anche l'altro (e viceversa).
+
+Come funziona:
+- ogni `YT_SYNC_INTERVAL_MIN` minuti (default 15) confronta le iscrizioni attuali dei due account con
+  l'ultimo stato noto salvato su disco;
+- propaga solo le iscrizioni **nuove** comparse dall'ultimo giro, in entrambe le direzioni;
+- non propaga mai due volte lo stesso canale (iscriversi a un canale già seguito è un no-op) e non
+  genera loop, perché lo stato "noto" viene aggiornato subito dopo ogni propagazione;
+- è **solo additivo**: le disiscrizioni non vengono replicate sull'altro account;
+- al primo avvio registra lo stato attuale dei due account **senza** fondere le iscrizioni pregresse
+  (altrimenti il primo giro scambierebbe in blocco tutto lo storico di entrambi).
+
+### Setup
+
+1. Crea un progetto su [Google Cloud Console](https://console.cloud.google.com/), abilita
+   **YouTube Data API v3** e crea credenziali OAuth 2.0 di tipo "App desktop" (o "Web" con redirect
+   URI `http://localhost:8090/oauth2callback`). Copia `Client ID` e `Client Secret` in `YT_CLIENT_ID`
+   / `YT_CLIENT_SECRET` nel tuo `.env`.
+2. Autorizza il primo account: `npm run youtube-auth -- account1` — apre un link, fai login con il
+   primo account YouTube e autorizza. Il refresh token viene salvato cifrato in
+   `youtube-sync/tokens/account1.token.json`.
+3. Ripeti per il secondo account: `npm run youtube-auth -- account2` (login con il secondo account).
+4. Avvia il demone: `npm run youtube-sync`. Per tenerlo attivo 24/7 puoi deployarlo come servizio a
+   parte (es. Render "Background Worker") oppure farlo girare in locale con `pm2`/`systemd`/screen.
+
+Su un deploy remoto senza browser puoi saltare `youtube-auth` e impostare direttamente
+`YT_ACCOUNT1_REFRESH_TOKEN` / `YT_ACCOUNT2_REFRESH_TOKEN` come env var (ottenuti in locale la prima
+volta con `youtube-auth`).
+
 ## Variabili d'Ambiente
 
 | Variabile | Obbligatoria | Descrizione |

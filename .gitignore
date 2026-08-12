@@ -6,6 +6,8 @@ simkl_token.json
 .simkl_token_raw
 cache_data.json
 sofatime_backup.json
+youtube-sync/tokens/
+youtube-sync/state.json
 
 # Log e output
 nohup.out
