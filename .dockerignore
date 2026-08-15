@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log*
+.git
+.github
+docs
+test
+.env
+.env.*
+!.env.example
+sofatime_backup.json
+*.sofa3bk
+*.log
+.DS_Store

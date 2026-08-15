@@ -1,0 +1,15 @@
+services:
+  sofatime-hub:
+    build: .
+    container_name: sofatime-hub
+    restart: unless-stopped
+    ports:
+      - "7780:7780"
+    environment:
+      - PORT=7780
+    env_file:
+      - .env
+    # Per usare un backup locale, copia prima il file come ./sofatime_backup.json
+    # oppure imposta SOFATIME_BACKUP_PATH / SOFATIME_BACKUP_URL nelle env.
+    # volumes:
+    #   - ./sofatime_backup.json:/app/sofatime_backup.json:ro
