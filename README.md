@@ -1,5 +1,8 @@
 # Sofatime Hub
 
+[![Licenza MIT](https://img.shields.io/github/license/samuelenigro97-prog/Sofatime-Hub)](LICENSE.md)
+[![Release](https://img.shields.io/github/v/release/samuelenigro97-prog/Sofatime-Hub?display_name=tag&sort=semver)](https://github.com/samuelenigro97-prog/Sofatime-Hub/releases)
+
 Addon Stremio/Nuvio che porta le tue watchlist di **Sofa Time (TVSofa)** nei cataloghi Stremio.
 
 Supporta una **Modalità Ibrida**:
