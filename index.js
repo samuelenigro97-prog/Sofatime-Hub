@@ -28,6 +28,9 @@ const TOKEN_FILE = path.join(__dirname, 'simkl_token.json');
 const CACHE_FILE = path.join(__dirname, 'cache_data.json');
 const TOKEN_ENC_KEY   = process.env.TOKEN_ENC_KEY   || '';
 const STREMIO_AUTHKEY = process.env.STREMIO_AUTHKEY || '';
+// Ping periodico per evitare il cold-start su Render: spento di default per non
+// consumare inutilmente le ore gratuite del piano. Vedi startKeepAlive() sotto.
+const KEEP_ALIVE = process.env.KEEP_ALIVE === 'true';
 
 const SIMKL_API      = 'https://api.simkl.com';
 const CACHE_TTL      = 60 * 1000;          // 1 min
@@ -548,7 +551,11 @@ async function getCatalogCached(catalogId, simklType, genre) {
 }
 
 // ─── Keep-alive Render (evita cold start) ────────────────────────────────────
+// Disattivato di default: un servizio 24/7 sfiora già da solo il limite delle
+// 750 ore/mese del piano gratuito Render (24h × 31gg = 744h). Va attivato
+// esplicitamente con KEEP_ALIVE=true solo su un piano che non ha quel limite.
 function startKeepAlive() {
+  if (!KEEP_ALIVE) return;
   if (!process.env.RENDER) return;
   setInterval(async () => {
     try { await fetch(ADDON_URL + '/manifest.json'); console.log('[keep-alive] ping'); }
@@ -624,7 +631,7 @@ async function main() {
     backupConfigurato: !!(SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)),
     simklSyncConfigurato: !!SIMKL_CLIENT_ID && !!accessToken,
     scrobblerAttivo: true,
-    keepAlive: !!process.env.RENDER,
+    keepAlive: KEEP_ALIVE && !!process.env.RENDER,
     cataloghiInCache: Object.keys(cache).map(k => k + ':' + (cache[k]?.metas?.length || 0) + ' item')
   }));
 
