@@ -59,6 +59,7 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 | `STREMIO_PASSWORD` | opzionale | Password account Stremio per lo scrobbler (usa **solo** le env var, non scriverla nel codice) |
 | `ADDON_URL` | consigliata | URL pubblico dell'addon (es. `https://sofatime-hub.onrender.com`) |
 | `PORT` | opzionale | Porta del server (default: `7780`) |
+| `KEEP_ALIVE` | opzionale | `true` per pingare l'addon ogni 14 min ed evitare il cold-start su Render. **Disattivato di default**: consuma ore del piano gratuito, vedi sotto |
 | `TOKEN_ENC_KEY` | opzionale | Cifra il token Simkl a riposo su disco |
 | `GITHUB_GIST_ID` | opzionale | ID del Gist su cui salvare il backup caricato da `/upload` |
 | `GITHUB_GIST_TOKEN` | opzionale | Token GitHub per aggiornare il Gist di backup |
@@ -79,3 +80,4 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 ## Manutenzione
 
 - **Versione:** quando pubblichi una modifica, aggiorna il numero in `package.json` **e** in `manifest.version` (dentro `index.js`): devono combaciare, altrimenti Stremio/Nuvio non rileva l'aggiornamento. Un test (`test/manifest.test.js`) verifica automaticamente che siano allineati.
+- **Piano gratuito Render (750 ore/mese):** un solo servizio acceso 24/7 consuma già ~744 ore/mese, quasi tutto il limite gratuito. Per questo `KEEP_ALIVE` è **disattivato di default**: l'addon si "addormenta" quando non lo usi (la prima richiesta dopo un periodo di inattività può metterci 30-60s in più) ma non rischi mai la sospensione dell'account per fine ore. Se hai un piano senza quel limite, puoi attivarlo con `KEEP_ALIVE=true`. **Non tenere più servizi 24/7 sullo stesso account Render**: il limite di 750h è condiviso su tutto il workspace, non per singolo servizio.
