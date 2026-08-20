@@ -1,9 +1,19 @@
 # Stato lavori — handoff
 
-> Documento di passaggio di consegne. Aggiornato al **19 agosto 2026**.
+> Documento di passaggio di consegne. Aggiornato al **20 agosto 2026**.
 > Scopo: permettere a chiunque (persona o assistente AI) di riprendere il lavoro
 > senza dover ricostruire il contesto. Aggiornare questo file quando cambia qualcosa
 > di rilevante.
+
+### Dove sta cosa
+
+| Documento | Contiene |
+|---|---|
+| [`README.md`](../README.md) | Come funziona il progetto: architettura, cataloghi, variabili d'ambiente, endpoint, installazione, test |
+| **questo file** | Stato dei lavori, infrastruttura reale, problemi aperti, prossimi passi |
+| [`CHANGELOG.md`](../CHANGELOG.md) | Storico delle versioni rilasciate |
+| [`RELEASE.md`](RELEASE.md) | Checklist per pubblicare una release |
+| [`.env.example`](../.env.example) | Tutte le variabili d'ambiente, commentate |
 
 ---
 
@@ -169,11 +179,17 @@ va considerata compromessa.
 
 ## 7. Convenzioni di lavoro
 
-- Sviluppo sul branch `claude/remove-sofa-time-buttons-at7zav`, poi PR verso `main`
-  (squash merge). Render pubblica automaticamente da `main`.
+- **Mai commit diretti su `main`.** Si lavora su un branch dedicato
+  (`claude/<descrizione-breve>`), poi PR verso `main` con squash merge.
+  Render pubblica automaticamente da `main`, quindi ogni merge va online.
 - **Quando si cambia il codice, aggiornare la versione in `package.json` E in
   `manifest.version` (`index.js`): devono combaciare.** Stremio rileva un
   aggiornamento solo se il numero di versione cambia. Un test lo verifica.
 - Dopo una modifica al manifest può servire rimuovere e reinstallare l'addon in
   Stremio/Nuvio per forzarne la rilettura.
-- Eseguire `npm test` prima di ogni commit.
+- Eseguire `npm test` prima di ogni commit (16 asserzioni, devono essere tutte verdi).
+- Usare `npm ci`, non `npm install`: `install` ha già scaricato una versione
+  sbagliata di `stremio-addon-sdk` (vedi §3, nota 1).
+- Interfaccia, commenti e documentazione **in italiano**.
+- Aggiornare questo file nella stessa PR in cui cambia qualcosa di rilevante:
+  una voce si sposta in «completato» solo dopo che è stata verificata davvero.
