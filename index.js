@@ -13,9 +13,9 @@ const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dir
 const SOFATIME_BACKUP_URL  = process.env.SOFATIME_BACKUP_URL  || '';
 
 // API Keys
-// Chiavi API gratuite/condivise: valori di default innocui, sovrascrivibili via env var.
-const TMDB_KEY       = process.env.TMDB_KEY       || 'edf2b5b43d56fa6eea398145d50a1e98';
-const RPDB_KEY       = process.env.RPDB_KEY       || 't0-free-rpdb-rounded-blocks';
+// Solo da variabili d'ambiente: mai chiavi hardcoded nel codice.
+const TMDB_KEY       = process.env.TMDB_KEY       || '';
+const RPDB_KEY       = process.env.RPDB_KEY       || '';
 // Credenziali personali dell'account Stremio per lo scrobbler: SOLO da env var, mai nel codice.
 const STREMIO_EMAIL    = process.env.STREMIO_EMAIL    || '';
 const STREMIO_PASSWORD = process.env.STREMIO_PASSWORD || '';
@@ -622,7 +622,6 @@ async function main() {
   });
 
   const app = express();
-  app.use(express.static(__dirname));
   app.get('/logo.png', (req, res) => res.sendFile(path.join(__dirname, 'logo.png')));
 
   app.get('/sofatime-status', (req, res) => res.json({
@@ -767,11 +766,15 @@ b.addEventListener('click', () => {
   app.use((req, res, next) => { res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); next(); });
   app.use(getRouter(builder.getInterface()));
 
-  app.listen(PORT, () => {
-    console.log('Sofa Time HUB v' + manifest.version + ' pronto su ' + ADDON_URL);
-    console.log('Manifest: ' + ADDON_URL + '/manifest.json');
-    console.log('Cataloghi: ' + manifest.catalogs.length);
+  const bindIps = (process.env.BIND || '0.0.0.0').split(',').map(s => s.trim());
+  bindIps.forEach(ip => {
+    app.listen(PORT, ip, () => {
+      console.log('Sofa Time HUB v' + manifest.version + ' in ascolto su ' + ip + ':' + PORT);
+    });
   });
+  console.log('Sofa Time HUB v' + manifest.version + ' pronto su ' + ADDON_URL);
+  console.log('Manifest: ' + ADDON_URL + '/manifest.json');
+  console.log('Cataloghi: ' + manifest.catalogs.length);
 }
 
 if (require.main === module) {
