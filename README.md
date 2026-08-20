@@ -5,6 +5,8 @@
 
 Addon Stremio/Nuvio che porta le tue watchlist di **Sofa Time (TVSofa)** nei cataloghi Stremio.
 
+> 📌 **Riprendi da qui:** lo stato dei lavori, i problemi aperti e i prossimi passi sono in **[docs/STATO_LAVORI.md](docs/STATO_LAVORI.md)**.
+
 Supporta una **Modalità Ibrida**:
 1. **Modalità Backup File (Offline / Natività 100%):** Carica direttamente un file di backup `.json` / `.sofa3bk` esportato da Sofa Time (locale o da un link URL/Gist remoto).
 2. **Modalità Live Sync (Simkl / Trakt Bridge):** Sincronizzazione automatica e in tempo reale sfruttando il collegamento di Sofa Time verso Simkl o Trakt.
