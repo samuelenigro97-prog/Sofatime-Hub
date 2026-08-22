@@ -32,6 +32,19 @@ const STREMIO_AUTHKEY = process.env.STREMIO_AUTHKEY || '';
 // consumare inutilmente le ore gratuite del piano. Vedi startKeepAlive() sotto.
 const KEEP_ALIVE = process.env.KEEP_ALIVE === 'true';
 
+function requestToken(req) {
+  const auth = req.get?.('authorization') || '';
+  if (/^Bearer\s+/i.test(auth)) return auth.replace(/^Bearer\s+/i, '').trim();
+  return '';
+}
+function tokenMatches(req, expected) {
+  if (!expected) return false;
+  const actual = requestToken(req);
+  const a = Buffer.from(actual);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 const SIMKL_API      = 'https://api.simkl.com';
 const CACHE_TTL      = 60 * 1000;          // 1 min
 const META_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 ore
@@ -649,7 +662,8 @@ async function main() {
   // Endpoint per forzare il reload immediato del backup (utile dopo aver aggiornato il Gist)
   app.post('/backup-refresh', async (req, res) => {
     const token = process.env.CLEAR_CACHE_TOKEN || '';
-    if (token && req.query.token !== token) return res.status(403).json({ error: 'forbidden' });
+    if (!token) return res.status(503).json({ error: 'CLEAR_CACHE_TOKEN non configurato' });
+    if (!tokenMatches(req, token)) return res.status(403).json({ error: 'forbidden' });
     await fetchAndCacheBackup(true);
     res.json({ ok: true, film: backupStatus.moviesCount, serie: backupStatus.showsCount, errore: backupStatus.lastError });
   });
@@ -664,20 +678,20 @@ async function main() {
 h1{color:#e7b700;margin-bottom:.5rem;font-size:1.6rem}p{color:#aaa;margin-bottom:1.5rem;font-size:.95rem}
 button{background:#e7b700;color:#0d0d1a;border:none;padding:12px 20px;font-size:1rem;font-weight:600;border-radius:8px;cursor:pointer;margin-top:1rem;width:100%}
 button:disabled{background:#555;cursor:not-allowed}
-input[type=file]{display:none}.file-label{display:block;padding:20px;background:#16213e;border:2px dashed #444;border-radius:8px;cursor:pointer;margin-bottom:1rem;color:#888;word-break:break-all}
+input[type=file]{display:none}.token{display:block;width:100%;padding:12px;margin-bottom:1rem;background:#16213e;color:#eee;border:1px solid #444;border-radius:8px}.file-label{display:block;padding:20px;background:#16213e;border:2px dashed #444;border-radius:8px;cursor:pointer;margin-bottom:1rem;color:#888;word-break:break-all}
 .file-label:hover{border-color:#e7b700;color:#eee}</style></head>
 <body><div class="box"><h1>🛋️ Aggiorna Sofa Time</h1><p>Seleziona il backup esportato da Sofa Time per aggiornare i tuoi cataloghi su Stremio.</p>
-<label class="file-label" id="lbl" for="file">Seleziona file .zip o .json...</label><input type="file" id="file" accept=".json,.sofa3bk,.zip" />
+<input class="token" type="password" id="token" autocomplete="off" placeholder="Token upload" /><label class="file-label" id="lbl" for="file">Seleziona file .zip o .json...</label><input type="file" id="file" accept=".json,.sofa3bk,.zip" />
 <button id="btn" disabled>Carica ora</button><p id="msg" style="margin-top:1.5rem;font-weight:600;"></p></div>
 <script>
-const f = document.getElementById('file'), l = document.getElementById('lbl'), b = document.getElementById('btn'), m = document.getElementById('msg');
+const f = document.getElementById('file'), token = document.getElementById('token'), l = document.getElementById('lbl'), b = document.getElementById('btn'), m = document.getElementById('msg');
 f.addEventListener('change', () => { if(f.files[0]) { l.textContent = f.files[0].name; l.style.borderColor = '#e7b700'; l.style.color = '#eee'; b.disabled = false; } });
 b.addEventListener('click', () => {
   const r = new FileReader();
   r.onload = async (e) => {
     b.disabled = true; b.textContent = 'Caricamento in corso...'; m.textContent = '';
     try {
-      const res = await fetch('/api/upload-backup' + location.search, { method: 'POST', body: e.target.result, headers: {'Content-Type':'application/octet-stream'} });
+      const res = await fetch('/api/upload-backup', { method: 'POST', body: e.target.result, headers: {'Content-Type':'application/octet-stream', 'Authorization':'Bearer ' + token.value} });
       const data = await res.json();
       if(data.ok) { m.style.color = '#4ade80'; m.textContent = '✅ Fatto! ' + data.film + ' film e ' + data.serie + ' serie aggiornati.'; b.textContent = 'Completato'; }
       else { m.style.color = '#f87171'; m.textContent = '❌ Errore: ' + (data.error||'Sconosciuto'); b.disabled = false; b.textContent = 'Riprova'; }
@@ -690,8 +704,8 @@ b.addEventListener('click', () => {
 
   // API che riceve il file dall'interfaccia web e lo carica sul Gist
   app.post('/api/upload-backup', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
-    // Protezione opzionale: se UPLOAD_TOKEN è impostato, richiede ?token=... corrispondente
-    if (UPLOAD_TOKEN && req.query.token !== UPLOAD_TOKEN) return res.status(403).json({ error: 'forbidden' });
+    if (!UPLOAD_TOKEN) return res.status(503).json({ error: 'UPLOAD_TOKEN non configurato' });
+    if (!tokenMatches(req, UPLOAD_TOKEN)) return res.status(403).json({ error: 'forbidden' });
     try {
       let text = '';
       let parsed = { movies: [], shows: [] };
@@ -756,7 +770,8 @@ b.addEventListener('click', () => {
   // Cache-clear protetto da token
   const CLEAR_CACHE_TOKEN = process.env.CLEAR_CACHE_TOKEN || '';
   app.get('/clear-cache', (req, res) => {
-    if (CLEAR_CACHE_TOKEN && req.query.token !== CLEAR_CACHE_TOKEN) return res.status(403).json({ error: 'forbidden' });
+    if (!CLEAR_CACHE_TOKEN) return res.status(503).json({ error: 'CLEAR_CACHE_TOKEN non configurato' });
+    if (!tokenMatches(req, CLEAR_CACHE_TOKEN)) return res.status(403).json({ error: 'forbidden' });
     Object.keys(cache).forEach(k => delete cache[k]);
     Object.keys(metaCache).forEach(k => delete metaCache[k]);
     console.log('[cache] svuotata manualmente');
@@ -781,4 +796,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, manifest };
+module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, requestToken, tokenMatches, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, manifest };
