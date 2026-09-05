@@ -566,7 +566,7 @@ function startKeepAlive() {
 // ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.8.0',
+  version: '0.8.1',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
@@ -709,13 +709,29 @@ b.addEventListener('click', () => {
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(zipBuffer);
         const zipEntries = zip.getEntries();
+        console.log('[upload] File ZIP ricevuto, voci:', zipEntries.map(e => e.entryName));
         zipEntries.forEach(entry => {
-          if (entry.name.toLowerCase().includes('watchlist') && entry.name.endsWith('.json')) {
+          if (!entry.isDirectory && entry.name.endsWith('.json') && !entry.entryName.includes('__MACOSX')) {
             const entryText = entry.getData().toString('utf8');
             const entryParsed = parseSofaTimeData(entryText);
             parsed.movies.push(...entryParsed.movies);
             parsed.shows.push(...entryParsed.shows);
           }
+        });
+        // Deduplica elementi
+        const seenM = new Set();
+        parsed.movies = parsed.movies.filter(m => {
+          const key = m.ids.imdb || m.ids.tmdb || m.title;
+          if (!key || seenM.has(key)) return false;
+          seenM.add(key);
+          return true;
+        });
+        const seenS = new Set();
+        parsed.shows = parsed.shows.filter(s => {
+          const key = s.ids.imdb || s.ids.tmdb || s.title;
+          if (!key || seenS.has(key)) return false;
+          seenS.add(key);
+          return true;
         });
         text = JSON.stringify(parsed);
       } else {
@@ -724,6 +740,9 @@ b.addEventListener('click', () => {
       }
       
       if (!parsed || (!parsed.movies.length && !parsed.shows.length)) return res.status(400).json({ error: 'Formato file non valido o vuoto' });
+      
+      // Salva su disco per persistenza
+      try { fs.writeFileSync(SOFATIME_BACKUP_PATH, text, 'utf8'); } catch (e) { console.warn('[upload] Errore salvataggio disco:', e.message); }
       
       // Aggiorna la cache in memoria e invalida i cataloghi
       cachedBackupData = parsed;
