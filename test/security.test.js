@@ -10,7 +10,7 @@ process.env.SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || 'test-id';
 process.env.SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || 'test-secret';
 process.env.TOKEN_ENC_KEY = 'chiave-di-test-per-cifratura';
 
-const { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX } = require('../index.js');
+const { serializeToken, deserializeToken, writeFileAtomicSync, requestToken, tokenMatches, ENC_PREFIX } = require('../index.js');
 
 let passed = 0;
 const ok = (name) => { console.log('  ok -', name); passed++; };
@@ -46,5 +46,13 @@ assert.strictEqual(fs.readdirSync(dir).filter(f => f.includes('.tmp')).length, 0
 assert.deepStrictEqual(deserializeToken(fs.readFileSync(target, 'utf8')), sample, 'contenuto scritto non valido');
 ok('writeFileAtomicSync scrive in modo atomico');
 fs.rmSync(dir, { recursive: true, force: true });
+
+const bearerReq = { get: name => name === 'authorization' ? 'Bearer segreto-lungo' : '', query: {} };
+assert.strictEqual(requestToken(bearerReq), 'segreto-lungo');
+assert.strictEqual(tokenMatches(bearerReq, 'segreto-lungo'), true);
+assert.strictEqual(tokenMatches(bearerReq, 'segreto-errato'), false);
+assert.strictEqual(tokenMatches({ get: () => '', query: { token: 'legacy' } }, 'legacy'), false, 'i token in query non sono accettati');
+assert.strictEqual(tokenMatches({ get: () => '', query: {} }, ''), false, 'segreto assente deve fallire chiuso');
+ok('solo autorizzazione Bearer e comportamento fail-closed');
 
 console.log('\nTutti i test superati (' + passed + ').');
