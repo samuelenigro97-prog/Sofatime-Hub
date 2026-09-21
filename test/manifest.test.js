@@ -6,7 +6,7 @@ const assert = require('assert');
 process.env.SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || 'test-id';
 process.env.SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || 'test-secret';
 
-const { manifest, idsFromStremioId, stremioIdFromSimkl } = require('../index.js');
+const { manifest, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile } = require('../index.js');
 const pkg = require('../package.json');
 
 console.log('Esecuzione test manifest / cataloghi...');
@@ -66,5 +66,25 @@ assert.strictEqual(stremioIdFromSimkl({ tmdb: 27205 }), 'tmdb:27205');
 assert.strictEqual(stremioIdFromSimkl({}), null);
 assert.strictEqual(stremioIdFromSimkl(null), null);
 ok('stremioIdFromSimkl converte con priorità imdb');
+
+// 9) Selezione dei file del backup Sofa Time.
+//    Regressione: un cambiamento che leggeva TUTTI i .json dello zip faceva
+//    finire i titoli già visti (es. una serie finita) nel catalogo "Da guardare".
+//    Gli elementi di watchlist* e watched* hanno campi identici: il nome del file
+//    è l'unico modo per distinguerli.
+assert.strictEqual(isWatchlistFile('watchlistMovie_(2026_09_21_13_28_20).json'), true);
+assert.strictEqual(isWatchlistFile('watchlistShow_(2026_09_21_13_28_20).json'), true);
+assert.strictEqual(isWatchlistFile('watchedMovie_(2026_09_21_13_28_20).json'), false, 'i film già visti vanno esclusi');
+assert.strictEqual(isWatchlistFile('watchedShow_(2026_09_21_13_28_20).json'), false, 'le serie già viste vanno escluse');
+assert.strictEqual(isWatchlistFile('stopWatchingMovie_(2026_09_21_13_28_20).json'), false);
+assert.strictEqual(isWatchlistFile('stopWatchingShow_(2026_09_21_13_28_20).json'), false);
+ok('isWatchlistFile esclude i file dei titoli visti/abbandonati');
+
+// 10) Le liste personalizzate dell'utente restano incluse; i non-JSON no.
+assert.strictEqual(isWatchlistFile('mcu__listid_1693983563_(2026_09_21_13_28_20).json'), true, 'le liste personalizzate vanno tenute');
+assert.strictEqual(isWatchlistFile('readme.txt'), false);
+assert.strictEqual(isWatchlistFile(''), false);
+assert.strictEqual(isWatchlistFile(null), false);
+ok('isWatchlistFile tiene le liste personalizzate e scarta i non-JSON');
 
 console.log('\nTutti i test manifest superati (' + passed + ').');

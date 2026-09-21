@@ -143,6 +143,20 @@ function stremioIdFromSimkl(ids) {
   return null;
 }
 
+// I backup Sofa Time separano le liste per NOME FILE:
+//   watchlistMovie/watchlistShow  → da vedere
+//   watchedMovie/watchedShow      → già visti
+//   stopWatchingMovie/Show        → abbandonati
+// I singoli elementi hanno campi identici nei due casi, quindi il nome del file
+// è l'unico modo per distinguerli: senza questo filtro i titoli già visti
+// finiscono nel catalogo "Da guardare". Le liste personalizzate vengono tenute.
+function isWatchlistFile(fileName) {
+  const n = String(fileName || '').toLowerCase();
+  if (!n.endsWith('.json')) return false;
+  if (n.startsWith('watched') || n.startsWith('stopwatching')) return false;
+  return true;
+}
+
 // Watchlist "plan to watch" da cache backup (se disponibile) o Sofa Time backup URL/file o Simkl API
 async function getPlanToWatch(simklType) {
   // 0. Usa la cache in memoria del backup (aggiornata dal poller automatico)
@@ -566,7 +580,7 @@ function startKeepAlive() {
 // ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.8.1',
+  version: '0.8.2',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
@@ -711,7 +725,7 @@ b.addEventListener('click', () => {
         const zipEntries = zip.getEntries();
         console.log('[upload] File ZIP ricevuto, voci:', zipEntries.map(e => e.entryName));
         zipEntries.forEach(entry => {
-          if (!entry.isDirectory && entry.name.endsWith('.json') && !entry.entryName.includes('__MACOSX')) {
+          if (!entry.isDirectory && isWatchlistFile(entry.name) && !entry.entryName.includes('__MACOSX')) {
             const entryText = entry.getData().toString('utf8');
             const entryParsed = parseSofaTimeData(entryText);
             parsed.movies.push(...entryParsed.movies);
@@ -800,4 +814,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, manifest };
+module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, manifest };
