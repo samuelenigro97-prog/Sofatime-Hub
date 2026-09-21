@@ -1,0 +1,30 @@
+name: test
+
+# Esegue la suite di test a ogni push e pull request su main.
+# Serve da rete di sicurezza: se una modifica reintroduce una regressione già
+# corretta in passato (es. i titoli già visti nel catalogo "Da guardare", o la
+# versione del manifest non allineata a package.json), il controllo fallisce
+# prima che la modifica finisca in produzione su Render.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installa le dipendenze
+        run: npm install --no-audit --no-fund
+
+      - name: Esegui i test
+        run: npm test
