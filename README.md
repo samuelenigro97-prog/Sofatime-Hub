@@ -72,6 +72,32 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 
 ---
 
+## Verifica che tutto funzioni
+
+Dopo ogni caricamento del backup, il Comando Rapido (o la pagina `/upload`) risponde così:
+
+```json
+{"ok":true,"film":741,"serie":149}
+```
+
+**Regola per capire se è tutto a posto:** quei numeri devono corrispondere ai titoli
+**"da vedere"** in Sofa Time, non all'intera libreria. Se vedi un numero circa doppio
+(es. ~1400 film), significa che sono entrati anche i **già visti** — è il sintomo del
+bug corretto nella v0.8.2.
+
+Controllo dello stato in qualsiasi momento, da browser:
+
+| Indirizzo | Cosa mostra |
+|---|---|
+| `/backup-status` | Conteggi di film e serie, ultimo aggiornamento, eventuali errori |
+| `/sofatime-status` | Versione, cataloghi attivi, cosa è configurato |
+| `/catalog/movie/sofatime-movies.json` | I primi 100 film del catalogo |
+
+Se un titolo già visto compare ancora tra i "da guardare", controlla prima in Sofa Time
+che sia stato davvero spostato tra i visti: l'addon rispecchia fedelmente il backup.
+
+---
+
 ## Comandi
 
 - `npm start` — Avvia l'addon

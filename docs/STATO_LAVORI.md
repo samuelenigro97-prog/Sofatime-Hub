@@ -1,9 +1,16 @@
 # Stato lavori — handoff
 
-> Documento di passaggio di consegne. Aggiornato al **19 agosto 2026**.
+> Documento di passaggio di consegne. Aggiornato al **21 settembre 2026**.
 > Scopo: permettere a chiunque (persona o assistente AI) di riprendere il lavoro
 > senza dover ricostruire il contesto. Aggiornare questo file quando cambia qualcosa
 > di rilevante.
+
+## Situazione in una riga
+
+**Render è tornato attivo** (la sospensione di agosto è rientrata il 1° settembre),
+l'addon gira lì alla versione **0.8.2**, i cataloghi sono corretti (741 film, 149 serie).
+La soluzione ponte sul Mac non serve più. Resta da rimettere l'indirizzo Render nel
+Comando Rapido iOS — vedi §5.
 
 ---
 
@@ -31,18 +38,24 @@ Cataloghi esposti (nomi allineati all'app originale):
 | #3 | **Sicurezza**: credenziali Stremio spostate fuori dal codice (solo env var), rimossa la route `/api/debug`, upload protetto opzionalmente da `UPLOAD_TOKEN`. |
 | #4 | Aggiunto `.env.example`, ripulito `.gitignore`. |
 | #8 | `KEEP_ALIVE` disattivato di default (vedi §4). Allineate `package.json` e `manifest.version` a `0.8.0`. |
+| #9 | Aggiunto questo documento di handoff. |
+| #10 | **v0.8.2**: esclusi dal catalogo i titoli già visti (`isWatchlistFile`), vedi §5. Aggiunta la CI che esegue i test. |
 
-Suite test: **16 asserzioni** (`npm test`) → sicurezza token (5), parser (3), manifest (8).
+Suite test: **18 asserzioni** (`npm test`) → sicurezza token (5), parser (3), manifest (10).
+Girano automaticamente a ogni push e pull request su `main` (`.github/workflows/test.yml`).
 
-Due test agiscono da rete di sicurezza contro regressioni già avvenute in passato:
+Quattro test agiscono da rete di sicurezza contro regressioni già avvenute in passato:
 - `manifest.version` deve combaciare con `package.json` (ha già intercettato un disallineamento reale);
-- `manifest.resources` deve essere solo `['catalog']` (impedisce di reintrodurre i tasti rimossi).
+- `manifest.resources` deve essere solo `['catalog']` (impedisce di reintrodurre i tasti rimossi);
+- `isWatchlistFile()` deve escludere i file `watched*`/`stopWatching*` (due test, impediscono il ritorno dei titoli già visti nel catalogo).
 
 ---
 
-## 3. Situazione infrastruttura (IMPORTANTE)
+## 3. Storico infrastruttura (agosto 2026 — risolto)
 
-### Render: sospeso fino al 1° settembre 2026
+> Sezione storica, utile se il problema si ripresenta. Per lo stato attuale vedi §5.
+
+### Render: era sospeso fino al 1° settembre 2026
 
 Il workspace Render ha esaurito le **750 ore gratuite mensili**. Causa: due servizi
 tenuti svegli 24/7 (`sofa-time-hub` + un secondo progetto `trakt-hub`, ora eliminato).
@@ -102,29 +115,63 @@ Ha senso solo su un piano senza limite di ore.
 
 ---
 
-## 5. Problema aperto
+## 5. Stato attuale e cose da sapere
 
-**Sintomo:** l'utente riferisce che in Stremio non vede i cataloghi.
+### Render è tornato (dal 1° settembre)
 
-**Diagnosi svolta (19/08, lato server tutto OK):**
-- `https://trifocals-riches-blast.ngrok-free.dev/manifest.json` → HTTP 200, JSON valido
-- `/catalog/movie/sofatime-movies.json` → popolato (es. "Stranizza d'amuri")
-- `/catalog/series/sofatime-series.json` → popolato (es. "Primal")
-- Testato anche con `User-Agent` da browser: **nessuna pagina interstiziale ngrok**,
-  risponde direttamente il JSON
+`https://sofa-time-hub.onrender.com` risponde regolarmente, versione **0.8.2**,
+dati caricati: **741 film, 149 serie**. La sospensione di agosto è rientrata da sola.
 
-**Conclusione:** il server, il tunnel e i dati funzionano. Il problema è nella
-configurazione lato client (Stremio).
+### ⚠️ Da fare: rimettere l'indirizzo Render nel Comando Rapido iOS
 
-**Da verificare col prossimo intervento:**
-1. Quale URL è effettivamente installato in Stremio — se è ancora un vecchio
-   `...trycloudflare.com`, va rimosso: quei tunnel sono morti.
-2. Rimuovere e riaggiungere l'addon con
-   `https://trifocals-riches-blast.ngrok-free.dev/manifest.json`.
-3. Attenzione: **`web.stremio.com` e Stremio Manager (web) non possono raggiungere
-   indirizzi locali `http://`** (blocco mixed-content / proxy backend). Con il
-   dominio ngrok in HTTPS il problema non si pone, ma è la causa degli errori
-   incontrati in precedenza con l'IP locale.
+Durante l'emergenza il Comando Rapido "SofaTime ➡️ Stremio" era stato puntato prima a
+un tunnel Cloudflare e poi al Mac via ngrok. **Quegli indirizzi ora sono morti**, quindi
+il comando spedisce nel vuoto. Va rimesso:
+
+```
+https://sofa-time-hub.onrender.com/api/upload-backup
+```
+
+(Comandi Rapidi → azione **Testo** in cima → sostituire l'URL.)
+
+Nota: il comando funziona **solo dal menu di condivisione** di Sofa Time, non premendo
+▶️ dentro l'app Comandi Rapidi (senza file in input restituisce
+`{"error":"Formato file non valido o vuoto"}`). La configurazione dell'azione
+"Ottieni contenuti di" è corretta: `POST` + `Corpo della richiesta: File` +
+`File: Input comando rapido`. In alternativa esiste la pagina `/upload`.
+
+### Regressione risolta: titoli già visti nel catalogo (v0.8.2)
+
+Il commit `40c082b` (v0.8.1) aveva sostituito il filtro sui nomi dei file dello zip
+("solo `watchlist`") con "tutti i `.json`", facendo entrare nel catalogo anche
+`watchedMovie`/`watchedShow`: i titoli già finiti comparivano tra quelli da guardare.
+
+**Dato fondamentale da ricordare:** gli elementi di `watchlist*` e `watched*` hanno
+campi **identici** (`addedDate`, `genres`, `imdb`, `release_date`, `runtime`, `title`,
+`tmdb`, `type`). Non esiste nessun campo "visto": **il nome del file è l'unica
+informazione disponibile**. Per questo esiste `isWatchlistFile()` in `index.js` —
+non rimuoverla e non allargarla ai file `watched*`/`stopWatching*`.
+
+Struttura di un backup Sofa Time:
+
+| File | Contenuto | Nel catalogo? |
+|---|---|---|
+| `watchlistMovie` / `watchlistShow` | Da vedere | ✅ sì |
+| `watchedMovie` / `watchedShow` | Già visti | ❌ no |
+| `stopWatchingMovie` / `stopWatchingShow` | Abbandonati | ❌ no |
+| `<nome>__listid_<id>` | Liste personalizzate | ✅ sì |
+
+### Il Mac non serve più
+
+I due LaunchAgent (`com.samuele.sofatime-hub`, `com.samuele.sofatime-ngrok`) possono
+essere disattivati:
+
+```bash
+launchctl unload -w ~/Library/LaunchAgents/com.samuele.sofatime-hub.plist
+launchctl unload -w ~/Library/LaunchAgents/com.samuele.sofatime-ngrok.plist
+```
+
+Restano comunque pronti come piano B in caso di futuri problemi con Render.
 
 ---
 
