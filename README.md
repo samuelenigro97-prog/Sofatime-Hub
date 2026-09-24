@@ -27,6 +27,7 @@ L'addon espone quattro cataloghi, allineati ai nomi dell'app Sofa Time originale
 |---|---|---|
 | **Da guardare** | Film + Serie | La tua watchlist "da vedere" importata da Sofa Time |
 | **Cosa guardare?** | Film + Serie | Selezione casuale dalla watchlist per scegliere al volo cosa vedere |
+| **Visti di recente** | Film + Serie | I titoli segnati come già visti su Sofa Time, dal più recente |
 
 ---
 
@@ -77,21 +78,23 @@ Esporta il file di backup dall'app Sofa Time sul telefono (`Impostazioni -> Gest
 Dopo ogni caricamento del backup, il Comando Rapido (o la pagina `/upload`) risponde così:
 
 ```json
-{"ok":true,"film":741,"serie":149}
+{"ok":true,"film":741,"serie":149,"filmVisti":676,"serieViste":78}
 ```
 
-**Regola per capire se è tutto a posto:** quei numeri devono corrispondere ai titoli
+**Regola per capire se è tutto a posto:** `film`/`serie` devono corrispondere ai titoli
 **"da vedere"** in Sofa Time, non all'intera libreria. Se vedi un numero circa doppio
 (es. ~1400 film), significa che sono entrati anche i **già visti** — è il sintomo del
-bug corretto nella v0.8.2.
+bug corretto nella v0.8.2. `filmVisti`/`serieViste` sono invece i titoli che alimentano
+il catalogo "Visti di recente" (v0.9.0): questi sì corrispondono ai già visti, è normale.
 
 Controllo dello stato in qualsiasi momento, da browser:
 
 | Indirizzo | Cosa mostra |
 |---|---|
-| `/backup-status` | Conteggi di film e serie, ultimo aggiornamento, eventuali errori |
+| `/backup-status` | Conteggi di film/serie da vedere e visti, ultimo aggiornamento, eventuali errori |
 | `/sofatime-status` | Versione, cataloghi attivi, cosa è configurato |
-| `/catalog/movie/sofatime-movies.json` | I primi 100 film del catalogo |
+| `/catalog/movie/sofatime-movies.json` | I primi 100 film di "Da guardare" |
+| `/catalog/movie/sofatime-movies-watched.json` | I primi 100 film di "Visti di recente" |
 
 Se un titolo già visto compare ancora tra i "da guardare", controlla prima in Sofa Time
 che sia stato davvero spostato tra i visti: l'addon rispecchia fedelmente il backup.

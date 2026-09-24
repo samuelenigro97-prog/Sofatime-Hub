@@ -157,6 +157,13 @@ function isWatchlistFile(fileName) {
   return true;
 }
 
+// I file watchedMovie/watchedShow alimentano il catalogo "Visti di recente"
+// (separato da "Da guardare"). stopWatching* (abbandonati) resta escluso da entrambi.
+function isWatchedFile(fileName) {
+  const n = String(fileName || '').toLowerCase();
+  return n.endsWith('.json') && n.startsWith('watched');
+}
+
 // Watchlist "plan to watch" da cache backup (se disponibile) o Sofa Time backup URL/file o Simkl API
 async function getPlanToWatch(simklType) {
   // 0. Usa la cache in memoria del backup (aggiornata dal poller automatico)
@@ -192,6 +199,30 @@ async function getPlanToWatch(simklType) {
   return [];
 }
 
+// Titoli già segnati come visti su Sofa Time (catalogo "Visti di recente").
+// Disponibile solo se il backup caricato è uno zip completo (con i file
+// watchedMovie/watchedShow): non c'è equivalente via API Simkl, quindi in
+// quel caso resta vuoto.
+async function getWatchedList(simklType) {
+  if (cachedBackupData && cachedBackupData.watched) {
+    const items = simklType === 'movies' ? cachedBackupData.watched.movies : cachedBackupData.watched.shows;
+    if (items && items.length > 0) {
+      return items.filter(x => stremioIdFromSimkl(x.ids));
+    }
+  }
+
+  const backupSource = SOFATIME_BACKUP_URL || SOFATIME_BACKUP_PATH;
+  if (SOFATIME_BACKUP_URL || fs.existsSync(SOFATIME_BACKUP_PATH)) {
+    const sofaData = await loadSofaTimeBackup(backupSource);
+    if (sofaData && sofaData.watched) {
+      const items = simklType === 'movies' ? sofaData.watched.movies : sofaData.watched.shows;
+      if (items && items.length > 0) return items.filter(x => stremioIdFromSimkl(x.ids));
+    }
+  }
+
+  return [];
+}
+
 async function markWatched(stremioId, simklType) {
   const key = simklType === 'movies' ? 'movies' : 'shows';
   return simklPost('/sync/history', { [key]: [{ ids: idsFromStremioId(stremioId), watched_at: new Date().toISOString() }] });
@@ -204,6 +235,8 @@ const backupStatus = {
   lastError: null,
   moviesCount: 0,
   showsCount: 0,
+  watchedMoviesCount: 0,
+  watchedShowsCount: 0,
   source: null
 };
 let cachedBackupData = null; // cache in memoria del backup corrente
@@ -239,11 +272,14 @@ async function fetchAndCacheBackup(force = false) {
     backupStatus.lastError = null;
     backupStatus.moviesCount = parsed.movies.length;
     backupStatus.showsCount = parsed.shows.length;
+    backupStatus.watchedMoviesCount = (parsed.watched && parsed.watched.movies.length) || 0;
+    backupStatus.watchedShowsCount = (parsed.watched && parsed.watched.shows.length) || 0;
     backupStatus.source = url;
     console.log(`[backup-auto] ✅ Backup aggiornato: ${parsed.movies.length} film, ${parsed.shows.length} serie`);
     // Invalida i cataloghi così vengono ricostruiti con i nuovi dati
     ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming',
-     'sofatime-movies-random', 'sofatime-series-random'].forEach(k => delete cache[k]);
+     'sofatime-movies-random', 'sofatime-series-random',
+     'sofatime-movies-watched', 'sofatime-series-watched'].forEach(k => delete cache[k]);
   } catch (e) {
     backupStatus.lastError = e.message;
     console.warn('[backup-auto] ❌ Errore fetch backup:', e.message);
@@ -492,6 +528,35 @@ async function buildCatalog(simklType) {
   return releasedList.map(({ addedDate, ...rest }) => rest);
 }
 
+// Catalogo "Visti di recente": titoli segnati come già visti su Sofa Time,
+// ordinati dal più recente. A differenza di "Da guardare" non serve gestire
+// gli "in arrivo": un titolo già visto non può esserlo.
+async function buildWatchedCatalog(simklType) {
+  const stremioType = simklType === 'movies' ? 'movie' : 'series';
+  const items = await getWatchedList(simklType);
+
+  const batch = items.map(it => {
+    const id = stremioIdFromSimkl(it.ids);
+    const key = stremioType + ':' + id;
+    const e = metaCache[key]?.meta || null;
+
+    return {
+      id, type: stremioType, tmdbId: (e && e.tmdbId) || (it.ids && it.ids.tmdb) || '',
+      name: (e && e.name) || it.title || id,
+      poster: (e && e.poster) || (it.ids && it.ids.imdb ? `https://images.metahub.space/poster/medium/${it.ids.imdb}/img` : undefined),
+      background: e && e.background,
+      description: e && e.description,
+      genres: (e && e.genres) || [],
+      imdbRating: e && e.imdbRating,
+      year: (e && e.year) || it.year,
+      addedDate: it.addedDate || 0
+    };
+  });
+
+  batch.sort((a, b) => (b.addedDate || 0) - (a.addedDate || 0));
+  return batch.map(({ addedDate, ...rest }) => rest);
+}
+
 // "Scegli per me": shuffle con 1 titolo per genere
 async function buildRandom(stremioType, genre) {
   const sourceId = stremioType === 'movie' ? 'sofatime-movies' : 'sofatime-series';
@@ -519,6 +584,8 @@ async function getCatalogCached(catalogId, simklType, genre) {
   const stremioType = simklType === 'movies' ? 'movie' : 'series';
   const isRandom    = catalogId.includes('random');
   const isUpcoming  = catalogId.includes('upcoming');
+  const isWatched   = catalogId.includes('watched');
+  const build       = isWatched ? buildWatchedCatalog : buildCatalog;
 
   if (isRandom) return buildRandom(stremioType, genre);
 
@@ -552,7 +619,7 @@ async function getCatalogCached(catalogId, simklType, genre) {
     entry.ts = Date.now();
     (async () => {
       try {
-        const metas = await buildCatalog(simklType);
+        const metas = await build(simklType);
         cache[catalogId] = { metas, ts: Date.now() };
         prefetchMeta(metas, stremioType);
         saveCacheToDisk();
@@ -564,7 +631,7 @@ async function getCatalogCached(catalogId, simklType, genre) {
 
   // Prima build
   console.log('[cache miss] ' + catalogId + ' — aggiorno...');
-  const metas = await buildCatalog(simklType);
+  const metas = await build(simklType);
   cache[catalogId] = { metas, ts: Date.now() };
   prefetchMeta(metas, stremioType);
   saveCacheToDisk();
@@ -587,16 +654,18 @@ function startKeepAlive() {
 // ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.8.2',
+  version: '0.9.0',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie',  id: 'sofatime-movies',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
+    { type: 'movie',  id: 'sofatime-movies',          name: 'Da guardare',      extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series',          name: 'Da guardare',      extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Cosa guardare?',   extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-random',   name: 'Cosa guardare?',   extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-watched',  name: 'Visti di recente', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-watched',  name: 'Visti di recente', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
   ],
   idPrefixes: ['tt', 'tmdb:'],
   logo: ADDON_URL + '/logo.png',
@@ -664,6 +733,8 @@ async function main() {
     ultimoErrore: backupStatus.lastError,
     film: backupStatus.moviesCount,
     serie: backupStatus.showsCount,
+    filmVisti: backupStatus.watchedMoviesCount,
+    serieViste: backupStatus.watchedShowsCount,
     cacheInMemoria: !!cachedBackupData
   }));
 
@@ -715,7 +786,7 @@ b.addEventListener('click', () => {
     if (UPLOAD_TOKEN && req.query.token !== UPLOAD_TOKEN) return res.status(403).json({ error: 'forbidden' });
     try {
       let text = '';
-      let parsed = { movies: [], shows: [] };
+      let parsed = { movies: [], shows: [], watched: { movies: [], shows: [] } };
       const { parseSofaTimeData } = require('./sofatimeParser');
 
       // Cerca la firma ZIP (PK) per ignorare eventuali header multipart (es. Comandi Rapidi Apple)
@@ -732,46 +803,53 @@ b.addEventListener('click', () => {
         const zipEntries = zip.getEntries();
         console.log('[upload] File ZIP ricevuto, voci:', zipEntries.map(e => e.entryName));
         zipEntries.forEach(entry => {
-          if (!entry.isDirectory && isWatchlistFile(entry.name) && !entry.entryName.includes('__MACOSX')) {
-            const entryText = entry.getData().toString('utf8');
-            const entryParsed = parseSofaTimeData(entryText);
+          if (entry.isDirectory || entry.entryName.includes('__MACOSX')) return;
+          if (isWatchlistFile(entry.name)) {
+            const entryParsed = parseSofaTimeData(entry.getData().toString('utf8'));
             parsed.movies.push(...entryParsed.movies);
             parsed.shows.push(...entryParsed.shows);
+          } else if (isWatchedFile(entry.name)) {
+            const entryParsed = parseSofaTimeData(entry.getData().toString('utf8'));
+            parsed.watched.movies.push(...entryParsed.movies);
+            parsed.watched.shows.push(...entryParsed.shows);
           }
         });
-        // Deduplica elementi
-        const seenM = new Set();
-        parsed.movies = parsed.movies.filter(m => {
-          const key = m.ids.imdb || m.ids.tmdb || m.title;
-          if (!key || seenM.has(key)) return false;
-          seenM.add(key);
-          return true;
-        });
-        const seenS = new Set();
-        parsed.shows = parsed.shows.filter(s => {
-          const key = s.ids.imdb || s.ids.tmdb || s.title;
-          if (!key || seenS.has(key)) return false;
-          seenS.add(key);
-          return true;
-        });
+        // Deduplica elementi (chiave: id, o titolo se manca l'id)
+        const dedupe = list => {
+          const seen = new Set();
+          return list.filter(x => {
+            const key = x.ids.imdb || x.ids.tmdb || x.title;
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        };
+        parsed.movies = dedupe(parsed.movies);
+        parsed.shows = dedupe(parsed.shows);
+        parsed.watched.movies = dedupe(parsed.watched.movies);
+        parsed.watched.shows = dedupe(parsed.watched.shows);
         text = JSON.stringify(parsed);
       } else {
         text = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body;
         parsed = parseSofaTimeData(text);
       }
-      
+
       if (!parsed || (!parsed.movies.length && !parsed.shows.length)) return res.status(400).json({ error: 'Formato file non valido o vuoto' });
-      
+
       // Salva su disco per persistenza
       try { fs.writeFileSync(SOFATIME_BACKUP_PATH, text, 'utf8'); } catch (e) { console.warn('[upload] Errore salvataggio disco:', e.message); }
-      
+
       // Aggiorna la cache in memoria e invalida i cataloghi
       cachedBackupData = parsed;
       backupStatus.moviesCount = parsed.movies.length;
       backupStatus.showsCount = parsed.shows.length;
+      backupStatus.watchedMoviesCount = (parsed.watched && parsed.watched.movies.length) || 0;
+      backupStatus.watchedShowsCount = (parsed.watched && parsed.watched.shows.length) || 0;
       backupStatus.lastSuccessAt = new Date().toISOString();
       backupStatus.lastError = null;
-      ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming', 'sofatime-movies-random', 'sofatime-series-random'].forEach(k => delete cache[k]);
+      ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming',
+       'sofatime-movies-random', 'sofatime-series-random',
+       'sofatime-movies-watched', 'sofatime-series-watched'].forEach(k => delete cache[k]);
 
       // Carica il file sul Gist se le credenziali sono presenti
       const gistId = process.env.GITHUB_GIST_ID;
@@ -786,7 +864,13 @@ b.addEventListener('click', () => {
         else console.log('[upload] Gist aggiornato con successo');
       }
 
-      res.json({ ok: true, film: parsed.movies.length, serie: parsed.shows.length });
+      res.json({
+        ok: true,
+        film: parsed.movies.length,
+        serie: parsed.shows.length,
+        filmVisti: backupStatus.watchedMoviesCount,
+        serieViste: backupStatus.watchedShowsCount
+      });
     } catch (e) {
       console.error('[upload] errore:', e.message);
       res.status(500).json({ error: e.message });
@@ -821,4 +905,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, manifest };
+module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isWatchedFile, manifest };

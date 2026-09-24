@@ -25,21 +25,25 @@ function extractIds(item) {
 }
 
 function parseSofaTimeData(data) {
-  if (!data) return { movies: [], shows: [] };
-  
+  if (!data) return { movies: [], shows: [], watched: { movies: [], shows: [] } };
+
   let jsonObj = data;
   if (typeof data === 'string') {
     try {
       jsonObj = JSON.parse(data);
     } catch (e) {
       console.warn('[sofatimeParser] Errore parsing JSON:', e.message);
-      return { movies: [], shows: [] };
+      return { movies: [], shows: [], watched: { movies: [], shows: [] } };
     }
   }
 
   const result = {
     movies: [],
-    shows: []
+    shows: [],
+    // Popolato solo quando si rilegge il formato "arricchito" prodotto da
+    // /api/upload-backup (root.watched): un file di export grezzo di Sofa
+    // Time non lo contiene, resta vuoto.
+    watched: { movies: [], shows: [] }
   };
 
   // Se l'oggetto ha un campo radice 'data' o 'backup'
@@ -86,6 +90,11 @@ function parseSofaTimeData(data) {
       // In assenza di tipo esplicito, inserisci sia tra film che tra serie se ha id
       result.movies.push(entry);
     }
+  }
+
+  if (root.watched && (Array.isArray(root.watched.movies) || Array.isArray(root.watched.shows))) {
+    result.watched.movies = root.watched.movies || [];
+    result.watched.shows = root.watched.shows || [];
   }
 
   return result;
