@@ -6,7 +6,7 @@ const assert = require('assert');
 process.env.SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || 'test-id';
 process.env.SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || 'test-secret';
 
-const { manifest, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isWatchedFile } = require('../index.js');
+const { manifest, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile } = require('../index.js');
 const pkg = require('../package.json');
 
 console.log('Esecuzione test manifest / cataloghi...');
@@ -28,8 +28,8 @@ ok("resources contiene solo 'catalog'");
 assert.deepStrictEqual(manifest.types, ['movie', 'series'], "i tipi devono essere ['movie','series']");
 ok('types corretti');
 
-// 4) Sei cataloghi con id e nomi attesi (allineati all'app Sofa Time originale).
-assert.strictEqual(manifest.catalogs.length, 6, 'devono esserci 6 cataloghi');
+// 4) Quattro cataloghi con id e nomi attesi (allineati all'app Sofa Time originale).
+assert.strictEqual(manifest.catalogs.length, 4, 'devono esserci 4 cataloghi');
 const byId = Object.fromEntries(manifest.catalogs.map(c => [c.id, c]));
 assert.strictEqual(byId['sofatime-movies'].name, 'Da guardare');
 assert.strictEqual(byId['sofatime-movies'].type, 'movie');
@@ -39,10 +39,6 @@ assert.strictEqual(byId['sofatime-movies-random'].name, 'Cosa guardare?');
 assert.strictEqual(byId['sofatime-movies-random'].type, 'movie');
 assert.strictEqual(byId['sofatime-series-random'].name, 'Cosa guardare?');
 assert.strictEqual(byId['sofatime-series-random'].type, 'series');
-assert.strictEqual(byId['sofatime-movies-watched'].name, 'Visti di recente');
-assert.strictEqual(byId['sofatime-movies-watched'].type, 'movie');
-assert.strictEqual(byId['sofatime-series-watched'].name, 'Visti di recente');
-assert.strictEqual(byId['sofatime-series-watched'].type, 'series');
 ok('cataloghi con id/nomi/tipi corretti');
 
 // 5) Ogni catalogo deve permettere skip (paginazione) e filtro per genere.
@@ -90,17 +86,5 @@ assert.strictEqual(isWatchlistFile('readme.txt'), false);
 assert.strictEqual(isWatchlistFile(''), false);
 assert.strictEqual(isWatchlistFile(null), false);
 ok('isWatchlistFile tiene le liste personalizzate e scarta i non-JSON');
-
-// 11) isWatchedFile: complementare a isWatchlistFile per i titoli già visti
-//     (catalogo "Visti di recente"). stopWatching* (abbandonati) resta escluso
-//     da entrambe: non è né "da vedere" né "visto".
-assert.strictEqual(isWatchedFile('watchedMovie_(2026_09_21_13_28_20).json'), true);
-assert.strictEqual(isWatchedFile('watchedShow_(2026_09_21_13_28_20).json'), true);
-assert.strictEqual(isWatchedFile('watchlistMovie_(2026_09_21_13_28_20).json'), false);
-assert.strictEqual(isWatchedFile('stopWatchingMovie_(2026_09_21_13_28_20).json'), false, 'gli abbandonati non sono "visti"');
-assert.strictEqual(isWatchedFile('mcu__listid_1693983563_(2026_09_21_13_28_20).json'), false);
-assert.strictEqual(isWatchedFile(''), false);
-assert.strictEqual(isWatchedFile(null), false);
-ok('isWatchedFile individua solo i file dei titoli già visti');
 
 console.log('\nTutti i test manifest superati (' + passed + ').');
