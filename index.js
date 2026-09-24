@@ -466,7 +466,8 @@ async function buildCatalog(simklType) {
       imdbRating: e && e.imdbRating,
       year: (e && e.year) || it.year,
       upcoming: !!(e && e.upcoming),
-      releaseDate: e && e.releaseDate
+      releaseDate: e && e.releaseDate,
+      addedDate: it.addedDate || 0
     };
   });
 
@@ -475,6 +476,10 @@ async function buildCatalog(simklType) {
     else releasedList.push(m);
   }
 
+  // "Da guardare" ordinato dal titolo aggiunto più di recente: l'ordine nel file
+  // di export di Sofa Time non corrisponde all'ordine di aggiunta alla watchlist.
+  releasedList.sort((a, b) => (b.addedDate || 0) - (a.addedDate || 0));
+
   // Ordina upcoming per data uscita
   upcomingList.sort((a, b) => new Date(a.releaseDate || 0) - new Date(b.releaseDate || 0));
 
@@ -482,7 +487,9 @@ async function buildCatalog(simklType) {
   const upcomingId = stremioType === 'movie' ? 'sofatime-movies-upcoming' : 'sofatime-series-upcoming';
   cache[upcomingId] = { metas: upcomingList, ts: Date.now() };
 
-  return releasedList;
+  // addedDate serviva solo per l'ordinamento: non è un campo previsto dal
+  // protocollo Stremio, viene tolto prima di restituire il catalogo.
+  return releasedList.map(({ addedDate, ...rest }) => rest);
 }
 
 // "Scegli per me": shuffle con 1 titolo per genere

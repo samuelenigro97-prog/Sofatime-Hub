@@ -39,4 +39,22 @@ assert.strictEqual(parsedStr.movies.length, 1);
 assert.strictEqual(parsedStr.movies[0].title, 'Interstellar');
 ok('parseSofaTimeData analizza stringhe JSON grezze');
 
+// 4) addedDate viene catturato e convertito in timestamp: serve a ordinare
+//    "Da guardare" dal più recente, perché l'ordine nel file di export di
+//    Sofa Time non corrisponde all'ordine di aggiunta alla watchlist.
+const withDates = parseSofaTimeData({
+  movies: [
+    { title: 'Vecchio', imdb_id: 'tt0000001', addedDate: '2026-08-01T10:00:00Z' },
+    { title: 'Nuovo', imdb_id: 'tt0000002', addedDate: '2026-09-20T10:00:00Z' }
+  ]
+});
+assert.ok(withDates.movies[0].addedDate > 0, 'addedDate deve essere un timestamp numerico');
+assert.ok(withDates.movies[1].addedDate > withDates.movies[0].addedDate, 'il più recente deve avere timestamp maggiore');
+ok('parseSofaTimeData cattura addedDate come timestamp confrontabile');
+
+// 5) Un elemento senza addedDate non deve far fallire il parsing.
+const withoutDate = parseSofaTimeData({ movies: [{ title: 'Senza data', imdb_id: 'tt0000003' }] });
+assert.strictEqual(withoutDate.movies[0].addedDate, 0);
+ok('parseSofaTimeData gestisce elementi senza addedDate (default 0)');
+
 console.log(`\nTutti i test parser superati (${passed}).`);

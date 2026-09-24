@@ -62,15 +62,20 @@ function parseSofaTimeData(data) {
     const ids = extractIds(media.ids || media);
     const title = media.title || media.name || item.title || '';
     const year = parseInt(media.year || media.release_date || item.year || 0, 10) || undefined;
-    
+    // Data di aggiunta alla watchlist (usata per ordinare "Da guardare" dal più recente).
+    // L'ordine degli elementi nel file di export non riflette l'ordine di aggiunta.
+    const addedDateRaw = media.addedDate || item.addedDate || media.added_at || item.added_at || '';
+    const addedDate = Date.parse(addedDateRaw) || 0;
+
     // Filtra elementi non pertinenti o senza identificativi
     if (!title && !ids.imdb && !ids.tmdb) continue;
 
-    const entry = { 
+    const entry = {
       type: typeStr.includes('show') || typeStr.includes('tv') || typeStr.includes('series') || item.show ? 'show' : 'movie',
-      ids, 
-      title, 
-      year 
+      ids,
+      title,
+      year,
+      addedDate
     };
 
     if (typeStr.includes('movie') || item.movie) {
