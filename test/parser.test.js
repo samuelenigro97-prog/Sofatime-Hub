@@ -57,20 +57,4 @@ const withoutDate = parseSofaTimeData({ movies: [{ title: 'Senza data', imdb_id:
 assert.strictEqual(withoutDate.movies[0].addedDate, 0);
 ok('parseSofaTimeData gestisce elementi senza addedDate (default 0)');
 
-// 6) parseSofaTimeData espone sempre `watched` (vuoto se assente): usato dal
-//    catalogo "Visti di recente".
-assert.deepStrictEqual(parsedStr.watched, { movies: [], shows: [] }, 'watched vuoto se il file non lo contiene');
-ok('parseSofaTimeData espone watched vuoto quando non presente');
-
-// 7) Se root.watched è già nel formato "arricchito" (round-trip del nostro
-//    stesso upload/Gist), viene passato attraverso invariato.
-const withWatched = parseSofaTimeData({
-  movies: [{ title: 'Da vedere', imdb_id: 'tt0000004' }],
-  watched: { movies: [{ title: 'Già visto', ids: { imdb: 'tt0000005' } }], shows: [] }
-});
-assert.strictEqual(withWatched.watched.movies.length, 1);
-assert.strictEqual(withWatched.watched.movies[0].title, 'Già visto');
-assert.strictEqual(withWatched.watched.shows.length, 0);
-ok('parseSofaTimeData passa attraverso root.watched quando presente');
-
 console.log(`\nTutti i test parser superati (${passed}).`);

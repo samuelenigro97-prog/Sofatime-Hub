@@ -1,6 +1,6 @@
 # Stato lavori — handoff
 
-> Documento di passaggio di consegne. Aggiornato al **24 settembre 2026**.
+> Documento di passaggio di consegne. Aggiornato al **21 settembre 2026**.
 > Scopo: permettere a chiunque (persona o assistente AI) di riprendere il lavoro
 > senza dover ricostruire il contesto. Aggiornare questo file quando cambia qualcosa
 > di rilevante.
@@ -8,11 +8,9 @@
 ## Situazione in una riga
 
 **Render è tornato attivo** (la sospensione di agosto è rientrata il 1° settembre),
-l'addon gira lì alla versione **0.9.0**. La soluzione ponte sul Mac non serve più.
-Novità: catalogo **"Visti di recente"** (v0.9.0, vedi §6) e ordinamento di
-"Da guardare" per data di aggiunta (vedi §5). Verifica sempre che il
-Comando Rapido iOS punti a `https://sofa-time-hub.onrender.com` — è capitato che
-restasse puntato a un indirizzo temporaneo usato durante un'emergenza passata.
+l'addon gira lì alla versione **0.8.2**, i cataloghi sono corretti (741 film, 149 serie).
+La soluzione ponte sul Mac non serve più. Resta da rimettere l'indirizzo Render nel
+Comando Rapido iOS — vedi §5.
 
 ---
 
@@ -26,9 +24,8 @@ Cataloghi esposti (nomi allineati all'app originale):
 
 | Catalogo | Tipi | Note |
 |---|---|---|
-| **Da guardare** | Film + Serie | La watchlist importata, ordinata dal titolo aggiunto più di recente |
+| **Da guardare** | Film + Serie | La watchlist importata |
 | **Cosa guardare?** | Film + Serie | Selezione casuale dalla watchlist |
-| **Visti di recente** | Film + Serie | I titoli già visti su Sofa Time, dal più recente |
 
 ---
 
@@ -43,11 +40,8 @@ Cataloghi esposti (nomi allineati all'app originale):
 | #8 | `KEEP_ALIVE` disattivato di default (vedi §4). Allineate `package.json` e `manifest.version` a `0.8.0`. |
 | #9 | Aggiunto questo documento di handoff. |
 | #10 | **v0.8.2**: esclusi dal catalogo i titoli già visti (`isWatchlistFile`), vedi §5. Aggiunta la CI che esegue i test. |
-| #11 | CI (`.github/workflows/test.yml`) + sezione README "Verifica che tutto funzioni". |
-| #12 | "Da guardare" ordinato per `addedDate` decrescente (nessun bump di versione: cambia solo il contenuto dinamico del catalogo, non la struttura del manifest). Il parser cattura `addedDate`, prima veniva scartato. |
-| #13 | **v0.9.0**: nuovo catalogo **"Visti di recente"** (`sofatime-movies-watched`/`sofatime-series-watched`), popolato dai file `watched*` del backup — finora scartati apposta dalla v0.8.2. Vedi §6. |
 
-Suite test: **23 asserzioni** (`npm test`) → sicurezza token (5), parser (7), manifest (11).
+Suite test: **18 asserzioni** (`npm test`) → sicurezza token (5), parser (3), manifest (10).
 Girano automaticamente a ogni push e pull request su `main` (`.github/workflows/test.yml`).
 
 Quattro test agiscono da rete di sicurezza contro regressioni già avvenute in passato:
@@ -125,10 +119,8 @@ Ha senso solo su un piano senza limite di ore.
 
 ### Render è tornato (dal 1° settembre)
 
-`https://sofa-time-hub.onrender.com` risponde regolarmente. Versione al 24/09: **0.9.0**
-(i conteggi film/serie cambiano ad ogni caricamento del backup, controllare
-`/backup-status` per il dato aggiornato invece di fidarsi di un numero scritto qui).
-La sospensione di agosto è rientrata da sola.
+`https://sofa-time-hub.onrender.com` risponde regolarmente, versione **0.8.2**,
+dati caricati: **741 film, 149 serie**. La sospensione di agosto è rientrata da sola.
 
 ### ⚠️ Da fare: rimettere l'indirizzo Render nel Comando Rapido iOS
 
@@ -148,7 +140,7 @@ Nota: il comando funziona **solo dal menu di condivisione** di Sofa Time, non pr
 "Ottieni contenuti di" è corretta: `POST` + `Corpo della richiesta: File` +
 `File: Input comando rapido`. In alternativa esiste la pagina `/upload`.
 
-### Regressione risolta: titoli già visti nel catalogo "Da guardare" (v0.8.2)
+### Regressione risolta: titoli già visti nel catalogo (v0.8.2)
 
 Il commit `40c082b` (v0.8.1) aveva sostituito il filtro sui nomi dei file dello zip
 ("solo `watchlist`") con "tutti i `.json`", facendo entrare nel catalogo anche
@@ -157,25 +149,17 @@ Il commit `40c082b` (v0.8.1) aveva sostituito il filtro sui nomi dei file dello 
 **Dato fondamentale da ricordare:** gli elementi di `watchlist*` e `watched*` hanno
 campi **identici** (`addedDate`, `genres`, `imdb`, `release_date`, `runtime`, `title`,
 `tmdb`, `type`). Non esiste nessun campo "visto": **il nome del file è l'unica
-informazione disponibile**. Per questo esistono `isWatchlistFile()` e `isWatchedFile()`
-in `index.js` — non toccarle senza capire bene questo punto.
+informazione disponibile**. Per questo esiste `isWatchlistFile()` in `index.js` —
+non rimuoverla e non allargarla ai file `watched*`/`stopWatching*`.
 
-### "Da guardare" ordinato dal più recente
+Struttura di un backup Sofa Time:
 
-L'ordine dei titoli nel file di export di Sofa Time **non** corrisponde all'ordine di
-aggiunta alla watchlist (verificato empiricamente: nessuna correlazione con `addedDate`).
-Il parser ora cattura `addedDate` (prima veniva scartato) e `buildCatalog()` in
-`index.js` ordina "Da guardare" per `addedDate` decrescente. "Cosa guardare?" resta
-mischiato casualmente ad ogni richiesta, comportamento già corretto.
-
-### Struttura di un backup Sofa Time e dove finisce ogni file (dalla v0.9.0)
-
-| File | Contenuto | Catalogo |
+| File | Contenuto | Nel catalogo? |
 |---|---|---|
-| `watchlistMovie` / `watchlistShow` | Da vedere | "Da guardare" / "Cosa guardare?" |
-| `watchedMovie` / `watchedShow` | Già visti | "Visti di recente" |
-| `stopWatchingMovie` / `stopWatchingShow` | Abbandonati | Nessuno (né watchlist né visti) |
-| `<nome>__listid_<id>` | Liste personalizzate | "Da guardare" / "Cosa guardare?" |
+| `watchlistMovie` / `watchlistShow` | Da vedere | ✅ sì |
+| `watchedMovie` / `watchedShow` | Già visti | ❌ no |
+| `stopWatchingMovie` / `stopWatchingShow` | Abbandonati | ❌ no |
+| `<nome>__listid_<id>` | Liste personalizzate | ✅ sì |
 
 ### Il Mac non serve più
 
@@ -191,44 +175,7 @@ Restano comunque pronti come piano B in caso di futuri problemi con Render.
 
 ---
 
-## 6. Catalogo "Visti di recente" (v0.9.0)
-
-Richiesto esplicitamente dall'utente: voleva un modo per vedere, dentro Stremio, i
-titoli già segnati come visti su Sofa Time.
-
-**Perché non è un "badge/checkmark" sui poster**: il protocollo Stremio non lo
-permette. Il badge di "visto" che si vede nell'app Apple TV nativa (o in Stremio sulla
-propria libreria) è uno stato tracciato dal **client stesso** (via Trakt o storage
-locale), non qualcosa che un addon di catalogo può disegnare sui poster di un altro
-catalogo. L'unico modo realmente supportato per un addon di mostrare "questi sono
-visti" è **un catalogo separato** — è la soluzione implementata.
-
-**Come funziona:**
-- Due nuovi cataloghi nel manifest: `sofatime-movies-watched` / `sofatime-series-watched`,
-  nome **"Visti di recente"**, ordinati per `addedDate` decrescente come "Da guardare".
-- `isWatchedFile()` in `index.js` seleziona `watchedMovie`/`watchedShow` dallo zip
-  (nuovo helper, complementare a `isWatchlistFile()` — `stopWatching*` non è "visto"
-  né "da vedere", resta escluso da entrambi).
-- `parseSofaTimeData()` in `sofatimeParser.js` ora espone anche `result.watched`
-  (`{movies, shows}`), popolato solo quando `root.watched` è già presente nell'oggetto
-  che sta analizzando: serve per il **round-trip** del formato che l'addon stesso scrive
-  su disco/Gist (vedi sotto), non per i file grezzi di Sofa Time (che non hanno mai
-  quella chiave — per quelli il watched arriva dal nome del file, gestito in `index.js`).
-- Il formato persistito su disco (`SOFATIME_BACKUP_PATH`) e sul Gist ora è
-  `{movies, shows, watched: {movies, shows}}` invece di `{movies, shows}`. Retrocompatibile:
-  un vecchio backup senza `watched` viene letto normalmente, il catalogo "Visti di
-  recente" resta solo vuoto finché non arriva un nuovo caricamento via zip.
-- **Limite consapevole**: i "visti" si popolano solo caricando lo **zip completo**
-  (Comando Rapido o `/upload`). Non c'è equivalente via API Simkl (fallback di
-  `getPlanToWatch`/`getWatchedList` quando non c'è alcun backup configurato).
-
-Verificato con un test end-to-end (server reale, zip sintetico caricato via
-`/api/upload-backup`, cataloghi interrogati via HTTP): i film/serie visti compaiono
-in "Visti di recente" ordinati correttamente e **non** in "Da guardare".
-
----
-
-## 7. Prossimi passi
+## 6. Prossimi passi
 
 ### A. Il 1° settembre 2026 — rientro su Render
 
@@ -267,7 +214,7 @@ va considerata compromessa.
 
 ---
 
-## 8. Convenzioni di lavoro
+## 7. Convenzioni di lavoro
 
 - Sviluppo sul branch `claude/remove-sofa-time-buttons-at7zav`, poi PR verso `main`
   (squash merge). Render pubblica automaticamente da `main`.
