@@ -64,8 +64,14 @@ function parseSofaTimeData(data) {
     const year = parseInt(media.year || media.release_date || item.year || 0, 10) || undefined;
     // Data di aggiunta alla watchlist (usata per ordinare "Da guardare" dal più recente).
     // L'ordine degli elementi nel file di export non riflette l'ordine di aggiunta.
-    const addedDateRaw = media.addedDate || item.addedDate || media.added_at || item.added_at || '';
-    const addedDate = Date.parse(addedDateRaw) || 0;
+    // Sofa Time la esporta come stringa ISO, ma il nostro stesso backup salvato su
+    // Gist/disco la ha già convertita in timestamp numerico: quando il poller
+    // automatico rilegge quel JSON e lo ripassa in questa stessa funzione, arriva
+    // come number, non string. Date.parse(number) restituisce sempre NaN (accetta
+    // solo stringhe in formato data), quindi va gestito il caso esplicitamente,
+    // altrimenti addedDate collassa a 0 per tutti gli elementi a ogni "secondo giro".
+    const addedDateRaw = media.addedDate ?? item.addedDate ?? media.added_at ?? item.added_at ?? '';
+    const addedDate = typeof addedDateRaw === 'number' ? addedDateRaw : (Date.parse(addedDateRaw) || 0);
 
     // Filtra elementi non pertinenti o senza identificativi
     if (!title && !ids.imdb && !ids.tmdb) continue;

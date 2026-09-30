@@ -57,4 +57,20 @@ const withoutDate = parseSofaTimeData({ movies: [{ title: 'Senza data', imdb_id:
 assert.strictEqual(withoutDate.movies[0].addedDate, 0);
 ok('parseSofaTimeData gestisce elementi senza addedDate (default 0)');
 
+// 6) REGRESSIONE: il backup che noi stessi salviamo su Gist/disco viene riletto
+//    periodicamente (poller ogni 30 min) attraverso QUESTA STESSA funzione. A quel
+//    punto addedDate non è più una stringa ISO ma il timestamp numerico che avevamo
+//    già calcolato al primo giro. Se il "secondo giro" collassasse tutto a 0,
+//    l'ordinamento di "Da guardare" smetterebbe di funzionare in silenzio (bug
+//    reale riscontrato in produzione: Date.parse(number) è sempre NaN).
+const firstPass = parseSofaTimeData({
+  movies: [{ title: 'Film', imdb_id: 'tt0000004', addedDate: '2026-09-20T10:00:00Z' }]
+});
+const roundTripped = JSON.parse(JSON.stringify(firstPass)); // simula il salvataggio+rilettura da Gist/disco
+const secondPass = parseSofaTimeData({ movies: roundTripped.movies });
+assert.strictEqual(secondPass.movies[0].addedDate, firstPass.movies[0].addedDate,
+  'il timestamp deve sopravvivere identico a un secondo giro di parsing (round-trip Gist/disco)');
+assert.notStrictEqual(secondPass.movies[0].addedDate, 0, 'non deve collassare a 0 al secondo giro');
+ok('parseSofaTimeData preserva addedDate anche quando arriva già come timestamp numerico');
+
 console.log(`\nTutti i test parser superati (${passed}).`);
