@@ -6,7 +6,6 @@ const crypto = require('crypto');
 const { loadSofaTimeBackup } = require('./sofatimeParser');
 const { startScrobblerLoop } = require('./scrobbler');
 
-// ─── Config ───────────────────────────────────────────────────────────────────
 const SIMKL_CLIENT_ID     = process.env.SIMKL_CLIENT_ID     || '';
 const SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || '';
 const SOFATIME_BACKUP_PATH = process.env.SOFATIME_BACKUP_PATH || path.join(__dirname, 'sofatime_backup.json');
@@ -45,7 +44,6 @@ const SERIES_GENRES = ['Azione & Avventura','Animazione','Commedia','Crime','Doc
 
 let accessToken = process.env.SIMKL_ACCESS_TOKEN || null;
 
-// ─── Token sicuro ─────────────────────────────────────────────────────────────
 const ENC_PREFIX = 'enc:v1:';
 function encKeyBytes() { return crypto.createHash('sha256').update(TOKEN_ENC_KEY).digest(); }
 function serializeToken(obj) {
@@ -75,7 +73,7 @@ function saveToken(tok) {
   accessToken = tok.access_token || accessToken;
   try {
     writeFileAtomicSync(TOKEN_FILE, serializeToken(tok), { mode: 0o600 });
-    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (e) {}
+    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (e) { /* ignore chmod error on platforms without POSIX permissions */ }
   } catch (e) { console.warn('[token] salvataggio fallito:', e.message); }
 }
 function loadToken() {
@@ -85,11 +83,10 @@ function loadToken() {
       const d = deserializeToken(fs.readFileSync(TOKEN_FILE, 'utf8'));
       if (d && d.access_token) { accessToken = d.access_token; console.log('[auth] token da file'); return true; }
     }
-  } catch (e) {}
+  } catch (e) { console.warn('[auth] errore lettura token file:', e.message); }
   return false;
 }
 
-// ─── Auth Simkl: PIN flow ─────────────────────────────────────────────────────
 async function authenticatePinFlow() {
   if (!SIMKL_CLIENT_ID) return false;
   const r = await fetch(SIMKL_API + '/oauth/pin?client_id=' + SIMKL_CLIENT_ID);
@@ -107,12 +104,11 @@ async function authenticatePinFlow() {
     try {
       const pj = await (await fetch(SIMKL_API + '/oauth/pin/' + userCode + '?client_id=' + SIMKL_CLIENT_ID)).json();
       if (pj.result === 'OK' && pj.access_token) { saveToken({ access_token: pj.access_token }); console.log('[auth] ✅ autorizzato'); return true; }
-    } catch (e) {}
+    } catch (e) { /* continue polling on transient network error */ }
   }
   throw new Error('Autorizzazione Simkl scaduta.');
 }
 
-// ─── Simkl HTTP ───────────────────────────────────────────────────────────────
 function simklHeaders() {
   const h = { 'Content-Type': 'application/json', 'simkl-api-key': SIMKL_CLIENT_ID };
   if (accessToken) h['Authorization'] = 'Bearer ' + accessToken;
@@ -197,7 +193,6 @@ async function markWatched(stremioId, simklType) {
   return simklPost('/sync/history', { [key]: [{ ids: idsFromStremioId(stremioId), watched_at: new Date().toISOString() }] });
 }
 
-// ─── Auto-refresh backup da URL (GitHub Gist o link diretto) ─────────────────
 const backupStatus = {
   lastFetchAt: null,
   lastSuccessAt: null,
@@ -261,7 +256,6 @@ function startBackupPoller() {
   setInterval(() => fetchAndCacheBackup(false), BACKUP_REFRESH_MIN * 60 * 1000).unref();
 }
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
 const cache = {};
 const metaCache = {};
 const translationCache = new Map();
@@ -285,7 +279,6 @@ function loadCacheFromDisk() {
   } catch (e) { console.warn('[cache-disk] errore:', e.message); }
 }
 
-// ─── TMDB helpers (come Trakt Hub) ───────────────────────────────────────────
 const POSTER_SIZE   = 'original';
 const BACKDROP_SIZE = 'original';
 
@@ -324,7 +317,7 @@ async function translateToItalian(text) {
     const translated = data[0].map(c => c[0]).join('');
     if (translated && translated !== text) { translationCache.set(text, translated); return translated; }
     return text;
-  } catch (e) { return text; }
+  } catch (_err) { return text; }
 }
 
 function tmdbFetch(url, timeoutMs = 10000) {
@@ -348,7 +341,7 @@ async function enrich(ids, stremioType) {
         const meta = (await r.json())?.meta;
         if (meta) result = { name: meta.name, poster: meta.poster, background: meta.background, description: meta.description || '', genres: meta.genres || [], imdbRating: meta.imdbRating, year: meta.year };
       }
-    } catch (e) {}
+    } catch (e) { console.debug('[enrich] Cinemeta fetch error:', e.message); }
   }
 
   // 2. TMDB: titolo/descrizione IT, poster migliore, backdrop migliore
@@ -401,7 +394,7 @@ async function enrich(ids, stremioType) {
           };
         }
       }
-    } catch (e) {}
+    } catch (e) { console.debug('[enrich] TMDB fetch error:', e.message); }
   }
 
   // 3. RPDB poster con badge rating
@@ -416,7 +409,6 @@ async function enrich(ids, stremioType) {
   return result;
 }
 
-// ─── Prefetch meta in background (come Trakt Hub) ────────────────────────────
 function prefetchMeta(metas, stremioType) {
   const toFetch = metas.filter(m => {
     const key = stremioType + ':' + m.id;
@@ -435,7 +427,7 @@ function prefetchMeta(metas, stremioType) {
           if (ids.tmdb) ids.tmdb = parseInt(String(ids.tmdb));
           const e = await enrich(ids, stremioType);
           if (e) metaCache[key] = { meta: { ...meta, ...e }, ts: Date.now(), v: META_CACHE_VER };
-        } catch (e2) {}
+        } catch (e2) { console.debug('[prefetch] item error:', e2.message); }
       }));
       if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, PAUSE));
     }
@@ -444,7 +436,6 @@ function prefetchMeta(metas, stremioType) {
   })();
 }
 
-// ─── Catalog builder ──────────────────────────────────────────────────────────
 async function buildCatalog(simklType) {
   const stremioType = simklType === 'movies' ? 'movie' : 'series';
   const items = await getPlanToWatch(simklType);
@@ -571,10 +562,6 @@ async function getCatalogCached(catalogId, simklType, genre) {
   return metas;
 }
 
-// ─── Keep-alive Render (evita cold start) ────────────────────────────────────
-// Disattivato di default: un servizio 24/7 sfiora già da solo il limite delle
-// 750 ore/mese del piano gratuito Render (24h × 31gg = 744h). Va attivato
-// esplicitamente con KEEP_ALIVE=true solo su un piano che non ha quel limite.
 function startKeepAlive() {
   if (!KEEP_ALIVE) return;
   if (!process.env.RENDER) return;
@@ -584,7 +571,6 @@ function startKeepAlive() {
   }, 14 * 60 * 1000).unref();
 }
 
-// ─── Manifest con 6 cataloghi ─────────────────────────────────────────────────
 const manifest = {
   id: 'it.samuele.sofatime.hub',
   version: '0.8.2',

@@ -62,7 +62,9 @@ async function startScrobblerLoop(email, password, onNewWatchedItem) {
         if (onNewWatchedItem) {
           try {
             await onNewWatchedItem(item);
-          } catch (e) {}
+          } catch (e) {
+            console.warn('[scrobble] errore item watcher:', e.message);
+          }
         }
       }
     }
