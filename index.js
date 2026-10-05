@@ -376,9 +376,16 @@ async function enrich(ids, stremioType) {
           let upcoming = false;
           if (releaseDate && new Date(releaseDate) > new Date()) {
             upcoming = true;
-            const formatted = new Date(releaseDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+          } else if (!releaseDate && base.status && !['Released', 'Ended', 'Canceled'].includes(base.status)) {
+            // TMDB non ha ancora una release_date precisa per titoli annunciati ma non
+            // datati (es. Cyberpunk: Edgerunners 2): senza questo fallback status-based
+            // finivano silenziosamente tra i "da vedere" come se fossero già usciti.
+            upcoming = true;
+          }
+          if (upcoming) {
+            const formatted = releaseDate ? new Date(releaseDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
             const label = stremioType === 'movie' ? 'Uscita prevista' : 'Prima stagione dal';
-            overview = (overview ? overview + '\n\n' : '') + '📅 ' + label + ': ' + formatted;
+            if (formatted) overview = (overview ? overview + '\n\n' : '') + '📅 ' + label + ': ' + formatted;
           }
 
           result = {
@@ -483,6 +490,33 @@ async function buildCatalog(simklType) {
   return releasedList.map(({ addedDate, ...rest }) => rest);
 }
 
+// ponytail: soglia fissa, non configurabile. Se va stretta/larga si cambia qui.
+const RECENT_RELEASE_DAYS = 30;
+function isRecentRelease(releaseDate, now = Date.now()) {
+  if (!releaseDate) return false;
+  const ageDays = (now - new Date(releaseDate).getTime()) / 86400000;
+  return ageDays >= 0 && ageDays <= RECENT_RELEASE_DAYS;
+}
+
+// "Prossimamente": uscite recenti + titoli ancora da uscire in un'unica fascia.
+// Legge dalle cache già popolate da buildCatalog() (sofatime-movies[-series] e la
+// relativa -upcoming) invece di ricostruire: evita di duplicare la logica di
+// promozione automatica degli "upcoming" già scaduti, che resta intatta e separata.
+async function buildProssimamente(stremioType) {
+  const mainId = stremioType === 'movie' ? 'sofatime-movies' : 'sofatime-series';
+  const simklType = stremioType === 'movie' ? 'movies' : 'shows';
+  if (!cache[mainId]) await getCatalogCached(mainId, simklType);
+
+  const recent = (cache[mainId]?.metas || [])
+    .filter(m => isRecentRelease(m.releaseDate))
+    .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
+  const upcoming = [...(cache[mainId + '-upcoming']?.metas || [])]
+    .sort((a, b) => new Date(a.releaseDate || 0) - new Date(b.releaseDate || 0))
+    .map(({ addedDate, ...rest }) => rest);
+
+  return [...recent, ...upcoming];
+}
+
 // "Scegli per me": shuffle con 1 titolo per genere
 async function buildRandom(stremioType, genre) {
   const sourceId = stremioType === 'movie' ? 'sofatime-movies' : 'sofatime-series';
@@ -510,8 +544,10 @@ async function getCatalogCached(catalogId, simklType, genre) {
   const stremioType = simklType === 'movies' ? 'movie' : 'series';
   const isRandom    = catalogId.includes('random');
   const isUpcoming  = catalogId.includes('upcoming');
+  const isProssimamente = catalogId.includes('prossimamente');
 
   if (isRandom) return buildRandom(stremioType, genre);
+  if (isProssimamente) return buildProssimamente(stremioType);
 
   if (isUpcoming) {
     if (cache[catalogId]) {
@@ -573,16 +609,18 @@ function startKeepAlive() {
 
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.8.2',
+  version: '0.9.0',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie',  id: 'sofatime-movies',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series',          name: 'Da guardare',   extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series-random',   name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
+    { type: 'movie',  id: 'sofatime-movies',               name: 'Da guardare',    extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series',               name: 'Da guardare',    extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-random',        name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-random',        name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-prossimamente', name: 'Prossimamente',  extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-prossimamente', name: 'Prossimamente',  extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
   ],
   idPrefixes: ['tt', 'tmdb:'],
   logo: ADDON_URL + '/logo.png',
@@ -807,4 +845,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, manifest };
+module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isRecentRelease, manifest };
