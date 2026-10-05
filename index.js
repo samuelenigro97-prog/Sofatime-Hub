@@ -396,7 +396,7 @@ async function enrich(ids, stremioType) {
             genres: ((it?.genres || en?.genres) || []).map(g => g.name),
             imdbRating: (result && result.imdbRating) || (base.vote_average ? String(base.vote_average.toFixed(1)) : undefined),
             year: parseInt(releaseDate || '0') || (result && result.year) || undefined,
-            upcoming, releaseDate: upcoming ? releaseDate : null,
+            upcoming, releaseDate: releaseDate || null,
             tmdbId: String(tmdbId || '')
           };
         }
