@@ -399,6 +399,16 @@ async function enrich(ids, stremioType) {
             upcoming, releaseDate: releaseDate || null,
             tmdbId: String(tmdbId || '')
           };
+        } else {
+          // TMDB ha riservato l'id (serve per costruire l'url) ma non pubblica ancora la
+          // scheda (titolo annunciato da pochissimo, es. Cyberpunk: Edgerunners 2: l'id
+          // esiste ma /tv/{id} risponde 404). Senza questo ramo `result` restava null,
+          // prefetchMeta non lo metteva mai in cache e il titolo finiva in "Da guardare"
+          // come se fosse già uscito, invece di comparire tra gli "in arrivo".
+          result = result || {};
+          result.upcoming = true;
+          result.releaseDate = null;
+          result.tmdbId = String(tmdbId);
         }
       }
     } catch (e) { console.debug('[enrich] TMDB fetch error:', e.message); }
@@ -609,7 +619,7 @@ function startKeepAlive() {
 
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.9.0',
+  version: '0.9.1',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
@@ -845,4 +855,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isRecentRelease, manifest };
+module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isRecentRelease, enrich, manifest };
