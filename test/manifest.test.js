@@ -99,8 +99,8 @@ ok('isWatchlistFile tiene le liste personalizzate e scarta i non-JSON');
 const NOW = Date.parse('2026-10-05T12:00:00Z');
 assert.strictEqual(isRecentRelease(null, NOW), false, 'senza data non è "recente"');
 assert.strictEqual(isRecentRelease('2026-10-04T00:00:00Z', NOW), true, 'ieri è recente');
-assert.strictEqual(isRecentRelease('2026-09-10T00:00:00Z', NOW), true, 'dentro i 30 giorni è recente');
-assert.strictEqual(isRecentRelease('2026-08-01T00:00:00Z', NOW), false, 'oltre i 30 giorni non è più recente');
+assert.strictEqual(isRecentRelease('2026-09-30T00:00:00Z', NOW), true, 'dentro i 7 giorni è recente');
+assert.strictEqual(isRecentRelease('2026-09-20T00:00:00Z', NOW), false, 'oltre i 7 giorni non è più recente');
 assert.strictEqual(isRecentRelease('2026-10-06T00:00:00Z', NOW), false, 'una data futura non è "uscita"');
 ok('isRecentRelease delimita correttamente la finestra delle uscite recenti');
 

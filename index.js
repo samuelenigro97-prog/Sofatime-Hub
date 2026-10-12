@@ -500,8 +500,9 @@ async function buildCatalog(simklType) {
   return releasedList.map(({ addedDate, ...rest }) => rest);
 }
 
-// ponytail: soglia fissa, non configurabile. Se va stretta/larga si cambia qui.
-const RECENT_RELEASE_DAYS = 30;
+// ponytail: soglia fissa, non configurabile. 7 giorni: con i dati reali l'app Sofa Time
+// mostra solo le uscite di 3-5 giorni fa e non quelle di 17+. Si cambia qui.
+const RECENT_RELEASE_DAYS = 7;
 function isRecentRelease(releaseDate, now = Date.now()) {
   if (!releaseDate) return false;
   const ageDays = (now - new Date(releaseDate).getTime()) / 86400000;
@@ -628,7 +629,7 @@ function startKeepAlive() {
 
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.10.0',
+  version: '0.10.1',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
