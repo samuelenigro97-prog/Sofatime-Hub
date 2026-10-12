@@ -508,23 +508,32 @@ function isRecentRelease(releaseDate, now = Date.now()) {
   return ageDays >= 0 && ageDays <= RECENT_RELEASE_DAYS;
 }
 
-// "Prossimamente": uscite recenti + titoli ancora da uscire in un'unica fascia.
-// Legge dalle cache già popolate da buildCatalog() (sofatime-movies[-series] e la
-// relativa -upcoming) invece di ricostruire: evita di duplicare la logica di
-// promozione automatica degli "upcoming" già scaduti, che resta intatta e separata.
-async function buildProssimamente(stremioType) {
+// Etichetta sotto il poster come nell'app Sofa Time: "3 gg fa" / "tra 2 giorni".
+function releaseLabel(releaseDate, now = Date.now()) {
+  const days = (new Date(releaseDate).getTime() - now) / 86400000;
+  if (days > 0) { const n = Math.ceil(days); return 'tra ' + n + (n === 1 ? ' giorno' : ' giorni'); }
+  const ago = Math.floor(-days);
+  return ago === 0 ? 'oggi' : ago + ' gg fa';
+}
+
+// Liste per data come nell'app Sofa Time: 'recent' (uscite degli ultimi giorni, dalla
+// più recente) e 'upcoming' (non ancora uscite, dalla più vicina; senza data in coda).
+// Classifica dalla releaseDate al momento della richiesta e non dal flag upcoming di
+// metaCache (resta vecchio fino a 24h): un titolo uscito ieri passa subito da "in
+// arrivo" a "recente". Legge dalle cache già popolate da buildCatalog().
+const NO_DATE = 8.64e15;
+async function buildByReleaseDate(stremioType, kind) {
   const mainId = stremioType === 'movie' ? 'sofatime-movies' : 'sofatime-series';
   const simklType = stremioType === 'movie' ? 'movies' : 'shows';
   if (!cache[mainId]) await getCatalogCached(mainId, simklType);
 
-  const recent = (cache[mainId]?.metas || [])
-    .filter(m => isRecentRelease(m.releaseDate))
-    .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
-  const upcoming = [...(cache[mainId + '-upcoming']?.metas || [])]
-    .sort((a, b) => new Date(a.releaseDate || 0) - new Date(b.releaseDate || 0))
-    .map(({ addedDate, ...rest }) => rest);
-
-  return [...recent, ...upcoming];
+  const now = Date.now();
+  const ts = m => m.releaseDate ? new Date(m.releaseDate).getTime() : NO_DATE;
+  const pool = [...(cache[mainId]?.metas || []), ...(cache[mainId + '-upcoming']?.metas || [])];
+  const picked = kind === 'recent'
+    ? pool.filter(m => isRecentRelease(m.releaseDate, now)).sort((a, b) => ts(b) - ts(a))
+    : pool.filter(m => m.upcoming && ts(m) > now).sort((a, b) => ts(a) - ts(b));
+  return picked.map(({ addedDate, ...m }) => ({ ...m, releaseInfo: m.releaseDate ? releaseLabel(m.releaseDate, now) : undefined }));
 }
 
 // "Scegli per me": shuffle con 1 titolo per genere
@@ -554,10 +563,10 @@ async function getCatalogCached(catalogId, simklType, genre) {
   const stremioType = simklType === 'movies' ? 'movie' : 'series';
   const isRandom    = catalogId.includes('random');
   const isUpcoming  = catalogId.includes('upcoming');
-  const isProssimamente = catalogId.includes('prossimamente');
+  const dateKind = /-recenti$/.test(catalogId) ? 'recent' : /-(anteprime|uscite)$/.test(catalogId) ? 'upcoming' : null;
 
   if (isRandom) return buildRandom(stremioType, genre);
-  if (isProssimamente) return buildProssimamente(stremioType);
+  if (dateKind) return buildByReleaseDate(stremioType, dateKind);
 
   if (isUpcoming) {
     if (cache[catalogId]) {
@@ -619,7 +628,7 @@ function startKeepAlive() {
 
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.9.1',
+  version: '0.10.0',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
@@ -629,8 +638,10 @@ const manifest = {
     { type: 'series', id: 'sofatime-series',               name: 'Da guardare',    extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
     { type: 'movie',  id: 'sofatime-movies-random',        name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
     { type: 'series', id: 'sofatime-series-random',        name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-prossimamente', name: 'Prossimamente',  extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series-prossimamente', name: 'Prossimamente',  extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] }
+    { type: 'movie',  id: 'sofatime-movies-recenti',       name: 'Rilasciato di recente',          extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
+    { type: 'series', id: 'sofatime-series-recenti',       name: 'Rilasciato di recente',          extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'series', id: 'sofatime-series-anteprime',     name: 'Anteprime delle prossime serie', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies-uscite',        name: 'Prossime uscite di film',        extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] }
   ],
   idPrefixes: ['tt', 'tmdb:'],
   logo: ADDON_URL + '/logo.png',
@@ -855,4 +866,4 @@ if (require.main === module) {
   main().catch(err => { console.error('Errore fatale:', err.message); process.exit(1); });
 }
 
-module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isRecentRelease, enrich, manifest };
+module.exports = { serializeToken, deserializeToken, writeFileAtomicSync, ENC_PREFIX, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isRecentRelease, releaseLabel, enrich, manifest };
