@@ -6,7 +6,7 @@ const assert = require('assert');
 process.env.SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || 'test-id';
 process.env.SIMKL_CLIENT_SECRET = process.env.SIMKL_CLIENT_SECRET || 'test-secret';
 
-const { manifest, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isRecentRelease } = require('../index.js');
+const { manifest, idsFromStremioId, stremioIdFromSimkl, isWatchlistFile, isRecentRelease, releaseLabel } = require('../index.js');
 const pkg = require('../package.json');
 
 console.log('Esecuzione test manifest / cataloghi...');
@@ -28,8 +28,8 @@ ok("resources contiene solo 'catalog'");
 assert.deepStrictEqual(manifest.types, ['movie', 'series'], "i tipi devono essere ['movie','series']");
 ok('types corretti');
 
-// 4) Sei cataloghi con id e nomi attesi (allineati all'app Sofa Time originale).
-assert.strictEqual(manifest.catalogs.length, 6, 'devono esserci 6 cataloghi');
+// 4) Otto cataloghi con id e nomi attesi (allineati all'app Sofa Time originale).
+assert.strictEqual(manifest.catalogs.length, 8, 'devono esserci 8 cataloghi');
 const byId = Object.fromEntries(manifest.catalogs.map(c => [c.id, c]));
 assert.strictEqual(byId['sofatime-movies'].name, 'Da guardare');
 assert.strictEqual(byId['sofatime-movies'].type, 'movie');
@@ -39,10 +39,14 @@ assert.strictEqual(byId['sofatime-movies-random'].name, 'Cosa guardare?');
 assert.strictEqual(byId['sofatime-movies-random'].type, 'movie');
 assert.strictEqual(byId['sofatime-series-random'].name, 'Cosa guardare?');
 assert.strictEqual(byId['sofatime-series-random'].type, 'series');
-assert.strictEqual(byId['sofatime-movies-prossimamente'].name, 'Prossimamente');
-assert.strictEqual(byId['sofatime-movies-prossimamente'].type, 'movie');
-assert.strictEqual(byId['sofatime-series-prossimamente'].name, 'Prossimamente');
-assert.strictEqual(byId['sofatime-series-prossimamente'].type, 'series');
+assert.strictEqual(byId['sofatime-movies-recenti'].name, 'Rilasciato di recente');
+assert.strictEqual(byId['sofatime-movies-recenti'].type, 'movie');
+assert.strictEqual(byId['sofatime-series-recenti'].name, 'Rilasciato di recente');
+assert.strictEqual(byId['sofatime-series-recenti'].type, 'series');
+assert.strictEqual(byId['sofatime-series-anteprime'].name, 'Anteprime delle prossime serie');
+assert.strictEqual(byId['sofatime-series-anteprime'].type, 'series');
+assert.strictEqual(byId['sofatime-movies-uscite'].name, 'Prossime uscite di film');
+assert.strictEqual(byId['sofatime-movies-uscite'].type, 'movie');
 ok('cataloghi con id/nomi/tipi corretti');
 
 // 5) Ogni catalogo deve permettere skip (paginazione) e filtro per genere.
@@ -91,8 +95,7 @@ assert.strictEqual(isWatchlistFile(''), false);
 assert.strictEqual(isWatchlistFile(null), false);
 ok('isWatchlistFile tiene le liste personalizzate e scarta i non-JSON');
 
-// 11) isRecentRelease: finestra fissa per il catalogo "Prossimamente" (uscite
-// recenti + titoli in arrivo). Un now fisso rende il test deterministico.
+// 11) isRecentRelease: finestra fissa per "Rilasciato di recente". Un now fisso rende il test deterministico.
 const NOW = Date.parse('2026-10-05T12:00:00Z');
 assert.strictEqual(isRecentRelease(null, NOW), false, 'senza data non è "recente"');
 assert.strictEqual(isRecentRelease('2026-10-04T00:00:00Z', NOW), true, 'ieri è recente');
@@ -100,5 +103,12 @@ assert.strictEqual(isRecentRelease('2026-09-10T00:00:00Z', NOW), true, 'dentro i
 assert.strictEqual(isRecentRelease('2026-08-01T00:00:00Z', NOW), false, 'oltre i 30 giorni non è più recente');
 assert.strictEqual(isRecentRelease('2026-10-06T00:00:00Z', NOW), false, 'una data futura non è "uscita"');
 ok('isRecentRelease delimita correttamente la finestra delle uscite recenti');
+
+// 12) releaseLabel: etichette come nell'app ("3 gg fa", "tra 2 giorni").
+assert.strictEqual(releaseLabel('2026-10-02T00:00:00Z', NOW), '3 gg fa');
+assert.strictEqual(releaseLabel('2026-10-05T00:00:00Z', NOW), 'oggi');
+assert.strictEqual(releaseLabel('2026-10-07T00:00:00Z', NOW), 'tra 2 giorni');
+assert.strictEqual(releaseLabel('2026-10-06T00:00:00Z', NOW), 'tra 1 giorno');
+ok('releaseLabel formatta uscite passate e future');
 
 console.log('\nTutti i test manifest superati (' + passed + ').');
