@@ -28,17 +28,14 @@ ok("resources contiene solo 'catalog'");
 assert.deepStrictEqual(manifest.types, ['movie', 'series'], "i tipi devono essere ['movie','series']");
 ok('types corretti');
 
-// 4) Otto cataloghi con id e nomi attesi (allineati all'app Sofa Time originale).
-assert.strictEqual(manifest.catalogs.length, 8, 'devono esserci 8 cataloghi');
+// 4) Sei cataloghi con id e nomi attesi (allineati all'app Sofa Time originale).
+assert.strictEqual(manifest.catalogs.length, 6, 'devono esserci 6 cataloghi');
 const byId = Object.fromEntries(manifest.catalogs.map(c => [c.id, c]));
 assert.strictEqual(byId['sofatime-movies'].name, 'Da guardare');
 assert.strictEqual(byId['sofatime-movies'].type, 'movie');
 assert.strictEqual(byId['sofatime-series'].name, 'Da guardare');
 assert.strictEqual(byId['sofatime-series'].type, 'series');
-assert.strictEqual(byId['sofatime-movies-random'].name, 'Cosa guardare?');
-assert.strictEqual(byId['sofatime-movies-random'].type, 'movie');
-assert.strictEqual(byId['sofatime-series-random'].name, 'Cosa guardare?');
-assert.strictEqual(byId['sofatime-series-random'].type, 'series');
+assert.deepStrictEqual(manifest.catalogs.map(c => c.id), ['sofatime-series', 'sofatime-movies', 'sofatime-movies-recenti', 'sofatime-series-recenti', 'sofatime-series-anteprime', 'sofatime-movies-uscite'], 'ordine come nell\'app Sofa Time');
 assert.strictEqual(byId['sofatime-movies-recenti'].name, 'Rilasciato di recente');
 assert.strictEqual(byId['sofatime-movies-recenti'].type, 'movie');
 assert.strictEqual(byId['sofatime-series-recenti'].name, 'Rilasciato di recente');
@@ -99,8 +96,8 @@ ok('isWatchlistFile tiene le liste personalizzate e scarta i non-JSON');
 const NOW = Date.parse('2026-10-05T12:00:00Z');
 assert.strictEqual(isRecentRelease(null, NOW), false, 'senza data non è "recente"');
 assert.strictEqual(isRecentRelease('2026-10-04T00:00:00Z', NOW), true, 'ieri è recente');
-assert.strictEqual(isRecentRelease('2026-09-30T00:00:00Z', NOW), true, 'dentro i 7 giorni è recente');
-assert.strictEqual(isRecentRelease('2026-09-20T00:00:00Z', NOW), false, 'oltre i 7 giorni non è più recente');
+assert.strictEqual(isRecentRelease('2026-09-26T00:00:00Z', NOW), true, 'dentro i 14 giorni è recente');
+assert.strictEqual(isRecentRelease('2026-09-20T00:00:00Z', NOW), false, 'oltre i 14 giorni non è più recente');
 assert.strictEqual(isRecentRelease('2026-10-06T00:00:00Z', NOW), false, 'una data futura non è "uscita"');
 ok('isRecentRelease delimita correttamente la finestra delle uscite recenti');
 
