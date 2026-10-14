@@ -237,8 +237,7 @@ async function fetchAndCacheBackup(force = false) {
     backupStatus.source = url;
     console.log(`[backup-auto] ✅ Backup aggiornato: ${parsed.movies.length} film, ${parsed.shows.length} serie`);
     // Invalida i cataloghi così vengono ricostruiti con i nuovi dati
-    ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming',
-     'sofatime-movies-random', 'sofatime-series-random'].forEach(k => delete cache[k]);
+    ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming'].forEach(k => delete cache[k]);
   } catch (e) {
     backupStatus.lastError = e.message;
     console.warn('[backup-auto] ❌ Errore fetch backup:', e.message);
@@ -500,9 +499,9 @@ async function buildCatalog(simklType) {
   return releasedList.map(({ addedDate, ...rest }) => rest);
 }
 
-// ponytail: soglia fissa, non configurabile. 7 giorni: con i dati reali l'app Sofa Time
-// mostra solo le uscite di 3-5 giorni fa e non quelle di 17+. Si cambia qui.
-const RECENT_RELEASE_DAYS = 7;
+// ponytail: soglia fissa, non configurabile. 14 giorni: con i dati reali l'app Sofa Time
+// mostra un'uscita di 7 giorni fa ("Sett. scorsa") ma non una di 17. Si cambia qui.
+const RECENT_RELEASE_DAYS = 14;
 function isRecentRelease(releaseDate, now = Date.now()) {
   if (!releaseDate) return false;
   const ageDays = (now - new Date(releaseDate).getTime()) / 86400000;
@@ -537,36 +536,11 @@ async function buildByReleaseDate(stremioType, kind) {
   return picked.map(({ addedDate, ...m }) => ({ ...m, releaseInfo: m.releaseDate ? releaseLabel(m.releaseDate, now) : undefined }));
 }
 
-// "Scegli per me": shuffle con 1 titolo per genere
-async function buildRandom(stremioType, genre) {
-  const sourceId = stremioType === 'movie' ? 'sofatime-movies' : 'sofatime-series';
-  if (!cache[sourceId]) await getCatalogCached(sourceId, stremioType === 'movie' ? 'movies' : 'shows');
-  let source = cache[sourceId]?.metas || [];
-  
-  // Filtra i titoli non ancora usciti (In arrivo)
-  const currentYear = new Date().getFullYear();
-  source = source.filter(m => {
-    const key = stremioType + ':' + m.id;
-    const e = metaCache[key]?.meta;
-    if (e && e.upcoming) return false;
-    if (m.upcoming) return false;
-    const year = parseInt(m.year || (e && e.year) || 0);
-    if (year > currentYear) return false;
-    return true;
-  });
-
-  if (genre) source = source.filter(m => m.genres && m.genres.includes(genre));
-  if (!source.length) return [];
-  return [...source].sort(() => Math.random() - 0.5).slice(0, 100);
-}
-
 async function getCatalogCached(catalogId, simklType, genre) {
   const stremioType = simklType === 'movies' ? 'movie' : 'series';
-  const isRandom    = catalogId.includes('random');
   const isUpcoming  = catalogId.includes('upcoming');
   const dateKind = /-recenti$/.test(catalogId) ? 'recent' : /-(anteprime|uscite)$/.test(catalogId) ? 'upcoming' : null;
 
-  if (isRandom) return buildRandom(stremioType, genre);
   if (dateKind) return buildByReleaseDate(stremioType, dateKind);
 
   if (isUpcoming) {
@@ -629,16 +603,14 @@ function startKeepAlive() {
 
 const manifest = {
   id: 'it.samuele.sofatime.hub',
-  version: '0.10.1',
+  version: '0.11.0',
   name: 'Sofa Time HUB',
   description: 'Sofa Time Hub - Addon Stremio/Nuvio per la tua watchlist Sofa Time (Backup + Live Sync + Scrobbling)',
   resources: ['catalog'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie',  id: 'sofatime-movies',               name: 'Da guardare',    extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series',               name: 'Da guardare',    extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
-    { type: 'movie',  id: 'sofatime-movies-random',        name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
-    { type: 'series', id: 'sofatime-series-random',        name: 'Cosa guardare?', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'series', id: 'sofatime-series',               name: 'Da guardare',                    extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
+    { type: 'movie',  id: 'sofatime-movies',               name: 'Da guardare',                    extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
     { type: 'movie',  id: 'sofatime-movies-recenti',       name: 'Rilasciato di recente',          extra: [{ name: 'skip' }, { name: 'genre', options: MOVIE_GENRES  }] },
     { type: 'series', id: 'sofatime-series-recenti',       name: 'Rilasciato di recente',          extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
     { type: 'series', id: 'sofatime-series-anteprime',     name: 'Anteprime delle prossime serie', extra: [{ name: 'skip' }, { name: 'genre', options: SERIES_GENRES }] },
@@ -817,7 +789,7 @@ b.addEventListener('click', () => {
       backupStatus.showsCount = parsed.shows.length;
       backupStatus.lastSuccessAt = new Date().toISOString();
       backupStatus.lastError = null;
-      ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming', 'sofatime-movies-random', 'sofatime-series-random'].forEach(k => delete cache[k]);
+      ['sofatime-movies', 'sofatime-series', 'sofatime-movies-upcoming', 'sofatime-series-upcoming'].forEach(k => delete cache[k]);
 
       // Carica il file sul Gist se le credenziali sono presenti
       const gistId = process.env.GITHUB_GIST_ID;
